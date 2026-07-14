@@ -1,0 +1,13 @@
+# Dependencies
+node_modules/
+
+# Build output
+frontend/dist/
+dist-win/
+
+# Local per-change backups (large snapshots, not source of truth)
+backups/
+
+# Logs / temp
+*.log
+*.tmp

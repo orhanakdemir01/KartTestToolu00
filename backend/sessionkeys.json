@@ -1,0 +1,41 @@
+[
+ {
+  "label": "Test Karti",
+  "pan": "",
+  "psn": "00",
+  "keyLevel": "auto",
+  "cvn": "mastercard",
+  "acKey": "44444444444444444444444444444444",
+  "macKey": "22222222222222222222222222222222",
+  "encKey": "55555555555555555555555555555555",
+  "acKcv": "E2F243",
+  "macKcv": "00962B",
+  "encKcv": "0CD7DC"
+ },
+ {
+  "label": "Deneme 2",
+  "pan": "",
+  "psn": "00",
+  "keyLevel": "auto",
+  "cvn": "mastercard",
+  "acKey": "11111111111111111111111111111111",
+  "macKey": "66666666666666666666666666666666",
+  "encKey": "77777777777777777777777777777777",
+  "acKcv": "82E136",
+  "macKcv": "B0B563",
+  "encKcv": "4CBE91"
+ },
+ {
+  "label": "Anahtar seti",
+  "pan": "",
+  "psn": "00",
+  "keyLevel": "master",
+  "cvn": "mastercard",
+  "acKey": "BA20C2FB2A57EF9DF8D65B7623DA73C4",
+  "macKey": "8640CE7A26FDB0BCD9EF3D866243CEFE",
+  "encKey": "381526D323EAB0A8D3A2433D45D9F4F8",
+  "acKcv": "925F5C",
+  "macKcv": "17BEEC",
+  "encKcv": "BDDAE7"
+ }
+]

@@ -24,6 +24,20 @@ Copy-Item "$root\backend\*.js","$root\backend\*.json" "$out\app\backend\"
 Copy-Item "$root\backend\node_modules" "$out\app\backend\node_modules" -Recurse
 Copy-Item "$root\frontend\dist" "$out\app\frontend\dist" -Recurse
 
+# Backend yalnizca pdfjs ile METIN cikarir (getTextContent), sayfa render etmez —
+# bu yuzden canvas/render bagimliliklarini paket kopyasindan buda (~52 MB). Kaynak
+# node_modules'e dokunmaz (npm reproducibility korunur). legacy/cmaps/standard_fonts kalir.
+Write-Host '== 3b/5 node_modules budaniyor (kullanilmayan pdfjs render parcalari) =='
+$nm = "$out\app\backend\node_modules"
+$prune = @(
+  "$nm\@napi-rs",                    # pdfjs canvas render (kullanilmiyor)
+  "$nm\pdfjs-dist\build",            # modern build (biz legacy/build kullaniyoruz)
+  "$nm\pdfjs-dist\web",              # tarayici goruntuleyici
+  "$nm\pdfjs-dist\image_decoders",  # goruntu cozucu (metin icin gereksiz)
+  "$nm\pdfjs-dist\types"            # TypeScript tipleri (runtime disi)
+)
+foreach ($p in $prune) { if (Test-Path $p) { Remove-Item $p -Recurse -Force } }
+
 Write-Host '== 4/5 launcher derleniyor (csc) =='
 & $csc -nologo -target:winexe -out:"$out\KartTest.exe" -r:System.Windows.Forms.dll "$root\packaging\launcher.cs"
 

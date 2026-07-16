@@ -173,7 +173,9 @@ const RULES = [
   { id: 'CRY-06', cat: 'ODA Kripto', sev: 'R', req: 'Application Cryptogram (ARQC/TC) üretildi (GENERATE AC)',
     run: (c) => { if (!c.hasCrypto) return NA('Kripto akışı yok'); const g = c.genac; if (!g || !g.arqc) return WARN('—', 'AC üretilmedi'); return PASS(`CID ${g.cid || '?'} · AC ${g.arqc}`); } },
   { id: 'CRY-07', cat: 'ODA Kripto', sev: 'R', req: 'ARQC işlem anahtarıyla doğrulandı',
-    run: (c) => { if (!c.hasCrypto || !c.genac?.arqc) return NA('AC yok'); const v = c.genac.verify; if (!v) return NA('Doğrulama yok'); if (v.noKey) return WARN('—', 'Bu PAN için işlem anahtarı yok — İşlem Anahtarları sekmesi'); return v.match ? PASS(`anahtar ${v.keyLabel || ''}`) : FAIL('—', 'ARQC eşleşmedi'); } },
+    // Önerilen (R) kural: eşleşmezlik FAIL değil WARN — yanlış/eksik yapılandırılmış
+    // işlem anahtarı da eşleşmezlik verir, bu bir kart kusuru olmayabilir.
+    run: (c) => { if (!c.hasCrypto || !c.genac?.arqc) return NA('AC yok'); const v = c.genac.verify; if (!v) return NA('Doğrulama yok'); if (v.noKey) return WARN('—', 'Bu PAN için işlem anahtarı yok — İşlem Anahtarları sekmesi'); return v.match ? PASS(`anahtar ${v.keyLabel || ''}`) : WARN('—', 'ARQC eşleşmedi — anahtar yanlış/eksik olabilir'); } },
 ];
 
 // Run all applicable rules against a card image for one interface.

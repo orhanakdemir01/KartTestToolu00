@@ -305,6 +305,9 @@ a:hover { color: #1a9850; text-decoration: underline; }
 .capk-ok { color: #157a43; font-weight: 600; }
 .capk-actions { white-space: nowrap; display: flex; gap: 6px; }
 .capk-table tr.capk-editing td { background: #fdf4e3; box-shadow: inset 2px 0 0 #d97706; }
+.capk-scroll { overflow-x: auto; }
+.capk-table td.capk-hash { white-space: normal; word-break: break-all; max-width: 340px; }
+.capk-table td.capk-actions { white-space: nowrap; }
 .oda-partial { color: #b45309; font-weight: 600; }
 .oda-note { color: #b45309; font-size: 11px; }
 .oda-fdda-note { border-left: 3px solid #d97706; padding-left: 10px; margin-top: 8px; line-height: 1.5; color: #6b7480; }

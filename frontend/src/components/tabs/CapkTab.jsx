@@ -19,28 +19,30 @@ export function CapkTab({
         </div>
       </div>
       <p className="muted small">EMV offline veri doğrulama (SDA/DDA/CDA) için şema CA public key'leri. Satırdaki <b>Düzenle</b> ile mevcut anahtarı değiştirebilirsin.</p>
-      <table className="capk-table">
-        <thead><tr><th>Şema</th><th>RID</th><th>Index</th><th>Exp</th><th>Bit</th><th>SHA-1</th><th></th></tr></thead>
-        <tbody>
-          {capks.filter((k) => capkFilter === 'all' || k.scheme === capkFilter).map((k, i) => {
-            const isRow = capkEdit && capkEdit.origRid === k.rid && capkEdit.origIndex === k.index;
-            return (
-              <tr key={i} className={isRow ? 'capk-editing' : ''}>
-                <td>{k.scheme}</td>
-                <td className="mono">{k.rid}</td>
-                <td className="mono b">{k.index}</td>
-                <td className="mono">{k.exponent}</td>
-                <td>{k.keyLength}</td>
-                <td className="mono small" title={`Modulus:\n${k.modulus}`}>{k.hash}</td>
-                <td className="capk-actions">
-                  <button className="btn-sm ghost" onClick={() => startEditCapk(k)}>Düzenle</button>
-                  <button className="btn-sm ghost" onClick={() => { if (confirm(`Silinsin mi? ${k.scheme} ${k.rid}/${k.index}`)) deleteCapk(k); }}>Sil</button>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <div className="capk-scroll">
+        <table className="capk-table">
+          <thead><tr><th>Şema</th><th>RID</th><th>Index</th><th>Exp</th><th>Bit</th><th>SHA-1</th><th></th></tr></thead>
+          <tbody>
+            {capks.filter((k) => capkFilter === 'all' || k.scheme === capkFilter).map((k, i) => {
+              const isRow = capkEdit && capkEdit.origRid === k.rid && capkEdit.origIndex === k.index;
+              return (
+                <tr key={i} className={isRow ? 'capk-editing' : ''}>
+                  <td>{k.scheme}</td>
+                  <td className="mono">{k.rid}</td>
+                  <td className="mono b">{k.index}</td>
+                  <td className="mono">{k.exponent}</td>
+                  <td>{k.keyLength}</td>
+                  <td className="mono small capk-hash" title={`Modulus:\n${k.modulus}`}>{k.hash}</td>
+                  <td className="capk-actions">
+                    <button className="btn-sm ghost" onClick={() => startEditCapk(k)}>Düzenle</button>
+                    <button className="btn-sm ghost" onClick={() => { if (confirm(`Silinsin mi? ${k.scheme} ${k.rid}/${k.index}`)) deleteCapk(k); }}>Sil</button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
 
       <details className="builder" open={editing}>
         <summary>{editing ? `✎ Düzenle: ${capkEdit.origRid} / ${capkEdit.origIndex}` : 'Yeni CA anahtarı ekle'}</summary>

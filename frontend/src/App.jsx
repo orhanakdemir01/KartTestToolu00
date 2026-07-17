@@ -60,27 +60,28 @@ const QUICK = [
   ] },
 ];
 
-// Tabs grouped into logical categories → two-level navigation (group row + sub-tabs).
+// Tabs grouped into logical categories → sidebar navigation (group + items).
+// desc = short subtitle shown in the top bar for that tab.
 const TAB_GROUPS = [
-  { id: 'read', label: 'Okuma & Analiz', icon: '📖', tabs: [
-    { id: 'card', label: 'Kart & EMV' },
-    { id: 'image', label: 'Kart Image' },
-    { id: 'apdu', label: 'APDU Konsolu' },
+  { id: 'read', label: 'Bağlantı & Okuma', icon: '📖', tabs: [
+    { id: 'card', label: 'Kart & EMV', icon: '💳', desc: 'PPSE → SELECT AID → GPO → READ RECORD zinciri' },
+    { id: 'image', label: 'Kart Image', icon: '🗂', desc: 'Tüm personalize EMV tag’lerini çıkar (CPV/VPA)' },
+    { id: 'apdu', label: 'APDU Konsolu', icon: '⌨', desc: 'Ham APDU gönder · TLV çözümle' },
   ] },
   { id: 'cert', label: 'Sertifikasyon', icon: '🛡️', tabs: [
-    { id: 'compliance', label: 'Uyumluluk' },
-    { id: 'profilepdf', label: 'PDF Profil' },
-    { id: 'oda', label: 'Offline Sertifika' },
-    { id: 'terminal', label: 'Terminal / Senaryo' },
-    { id: 'test', label: 'Test' },
+    { id: 'compliance', label: 'Uyumluluk', icon: '✔', desc: 'EMV çekirdek + Mastercard CPV kural motoru' },
+    { id: 'profilepdf', label: 'PDF Profil', icon: '📄', desc: 'Profile Advisor PDF ↔ kart karşılaştırma' },
+    { id: 'oda', label: 'Offline Sertifika', icon: '🔐', desc: 'DDA / CDA / fDDA sertifika zinciri + imza' },
+    { id: 'terminal', label: 'Terminal / Senaryo', icon: '🖥', desc: 'Terminal profili + TC/ARQC/AAC senaryoları' },
+    { id: 'test', label: 'Test', icon: '🧪', desc: 'APDU dizisi test paketleri' },
   ] },
   { id: 'keymgmt', label: 'Anahtarlar & PIN', icon: '🔑', tabs: [
-    { id: 'capk', label: 'CA Anahtarları' },
-    { id: 'keys', label: 'İşlem Anahtarları' },
-    { id: 'pin', label: 'PIN Değiştir' },
+    { id: 'capk', label: 'CA Anahtarları', icon: '🔑', desc: 'CAPK deposu (RID + index)' },
+    { id: 'keys', label: 'İşlem Anahtarları', icon: '🗝', desc: 'AC / MAC / ENC işlem anahtarları' },
+    { id: 'pin', label: 'PIN Değiştir', icon: '🔢', desc: 'PIN değiştir / doğrula' },
   ] },
-  { id: 'output', label: 'Rapor', icon: '📄', tabs: [
-    { id: 'report', label: 'Rapor' },
+  { id: 'output', label: 'Sonuç & Yapılandırma', icon: '📄', tabs: [
+    { id: 'report', label: 'Rapor', icon: '📊', desc: 'Oturum raporu (HTML / yazdır)' },
   ] },
 ];
 
@@ -865,57 +866,83 @@ ${apps}
     URL.revokeObjectURL(url);
   };
 
+  const activeTabObj = activeGroup.tabs.find((t) => t.id === activeTab) || activeGroup.tabs[0];
+
   return (
-    <div className="app">
-      <header className="header">
-        <div className="brand">
-          <span className="logo">▣ KartTest</span>
-          <span className="subtitle">Smart Card / EMV Test Tool</span>
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="sidebar-brand">
+          <div className="sidebar-logo">❈</div>
+          <div>
+            <div className="b-name">EMV Test Tool</div>
+            <div className="b-sub">Kart Doğrulama Konsolu</div>
+          </div>
         </div>
-        <div className="header-badges">
-          <span className={`chip ${cardPresent ? 'chip-on' : 'chip-off'}`}>{cardPresent ? '▣ Kart Var' : '▢ Kart Yok'}</span>
-          {mode && <span className="chip chip-real">🔌 Gerçek</span>}
-          <span className={`chip ${conn === 'ok' ? 'chip-on' : 'chip-err'}`}>{conn === 'ok' ? '● Bağlı' : '● Hata'}</span>
+        <nav className="sidebar-nav">
+          {TAB_GROUPS.map((g) => (
+            <div key={g.id}>
+              <div className="nav-group-label">{g.label}</div>
+              {g.tabs.map((t) => (
+                <button key={t.id} className={`nav-item ${activeTab === t.id ? 'active' : ''}`} onClick={() => selectTab(t.id)}>
+                  <span className="nav-ico">{t.icon}</span>
+                  <span className="nav-lbl">{t.label}</span>
+                </button>
+              ))}
+            </div>
+          ))}
+        </nav>
+        <div className="sidebar-foot">
+          <span className="f-ico">🖥</span>
+          <div>
+            <div className="f-main">{readers.length ? `PC/SC · ${readers.length} okuyucu` : 'Okuyucu yok'}</div>
+            <div className="f-sub">{mode ? 'Gerçek mod' : '—'} · {conn === 'ok' ? 'Bağlı' : 'Bağlantı hatası'}</div>
+          </div>
         </div>
-      </header>
+      </aside>
 
-      <div className="reader-bar">
-        {readers.map((r, i) => {
-          const isContactless = /contactless/i.test(r);
-          const st = readerStatus.find((s) => s.reader === r);
-          const hasCard = st?.present;
-          const isSelected = selectedReader === r;
-          const shortName = r.replace(/^SCM Microsystems Inc\.\s*/, '');
-          return (
-            <button
-              key={i}
-              className={`reader-pill ${isSelected ? 'reader-selected' : ''} ${hasCard ? 'reader-hascard' : ''}`}
-              title={`${r}\n${isSelected ? 'Seçili — tıkla: otomatik' : 'Tıkla: bu okuyucuyu hedefle'}`}
-              onClick={() => setSelectedReader(isSelected ? null : r)}
-            >
-              <span className="reader-ico">{isContactless ? '📶' : '🔌'}</span>
-              {shortName}
-              <span className={`reader-tag ${isContactless ? 'tag-cl' : 'tag-ct'}`}>{isContactless ? 'Temassız' : 'Temaslı'}</span>
-              {hasCard && <span className="reader-here">● kart</span>}
-              {isSelected && <span className="reader-sel">✓ seçili</span>}
-            </button>
-          );
-        })}
-        {selectedReader && (
-          <button className="reader-clear" onClick={() => setSelectedReader(null)} title="Otomatik seçime dön">✕ otomatik</button>
-        )}
-      </div>
+      <div className="main-col">
+        <header className="topbar">
+          <div className="topbar-title">
+            <h1>{activeTabObj?.label}</h1>
+            <p>{activeTabObj?.desc || activeGroup.label}</p>
+          </div>
+          <div className="topbar-actions header-badges">
+            <span className={`chip ${cardPresent ? 'chip-on' : 'chip-off'}`}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: cardPresent ? '#1a9850' : '#b6bfb9', display: 'inline-block', animation: cardPresent ? 'ktPulse 1.8s ease-in-out infinite' : 'none' }}></span>
+              {cardPresent ? 'Kart Bağlı' : 'Kart Yok'}
+            </span>
+            {mode && <span className="chip chip-real">🔌 Gerçek</span>}
+            <span className={`chip ${conn === 'ok' ? 'chip-on' : 'chip-err'}`}>{conn === 'ok' ? '● Bağlı' : '● Hata'}</span>
+          </div>
+        </header>
 
-      <nav className="tab-groups">
-        {TAB_GROUPS.map((g) => (
-          <button key={g.id} className={`tab-group ${activeGroup.id === g.id ? 'active' : ''}`} onClick={() => selectGroup(g)}><span className="tab-group-ico">{g.icon}</span> {g.label}</button>
-        ))}
-      </nav>
-      <nav className="tabs">
-        {activeGroup.tabs.map((t) => (
-          <button key={t.id} className={`tab ${activeTab === t.id ? 'active' : ''}`} onClick={() => selectTab(t.id)}>{t.label}</button>
-        ))}
-      </nav>
+        <main className="main-content">
+          <div className="reader-bar">
+            {readers.map((r, i) => {
+              const isContactless = /contactless/i.test(r);
+              const st = readerStatus.find((s) => s.reader === r);
+              const hasCard = st?.present;
+              const isSelected = selectedReader === r;
+              const shortName = r.replace(/^SCM Microsystems Inc\.\s*/, '');
+              return (
+                <button
+                  key={i}
+                  className={`reader-pill ${isSelected ? 'reader-selected' : ''} ${hasCard ? 'reader-hascard' : ''}`}
+                  title={`${r}\n${isSelected ? 'Seçili — tıkla: otomatik' : 'Tıkla: bu okuyucuyu hedefle'}`}
+                  onClick={() => setSelectedReader(isSelected ? null : r)}
+                >
+                  <span className="reader-ico">{isContactless ? '📶' : '🔌'}</span>
+                  {shortName}
+                  <span className={`reader-tag ${isContactless ? 'tag-cl' : 'tag-ct'}`}>{isContactless ? 'Temassız' : 'Temaslı'}</span>
+                  {hasCard && <span className="reader-here">● kart</span>}
+                  {isSelected && <span className="reader-sel">✓ seçili</span>}
+                </button>
+              );
+            })}
+            {selectedReader && (
+              <button className="reader-clear" onClick={() => setSelectedReader(null)} title="Otomatik seçime dön">✕ otomatik</button>
+            )}
+          </div>
 
       {activeTab === 'card' && (
         <CardTab
@@ -994,8 +1021,10 @@ ${apps}
           card={card} emv={emv} testResult={testResult} trace={trace} />
       )}
 
-      <TraceDock trace={trace} traceOpen={traceOpen} setTraceOpen={setTraceOpen}
-        exportTrace={exportTrace} clearTrace={() => setTrace([])} traceRef={traceRef} />
+          <TraceDock trace={trace} traceOpen={traceOpen} setTraceOpen={setTraceOpen}
+            exportTrace={exportTrace} clearTrace={() => setTrace([])} traceRef={traceRef} />
+        </main>
+      </div>
     </div>
   );
 }

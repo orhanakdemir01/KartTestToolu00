@@ -872,7 +872,20 @@ ${apps}
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <div className="sidebar-logo">❈</div>
+          <div className="sidebar-logo">
+            <svg width="22" height="17" viewBox="0 0 50 37" xmlns="http://www.w3.org/2000/svg" aria-label="chip">
+              <defs>
+                <linearGradient id="ktChip" x1="0" y1="0" x2="1" y2="1">
+                  <stop stopColor="#f0d066" /><stop offset="1" stopColor="#d4a838" />
+                </linearGradient>
+              </defs>
+              <rect x="0.5" y="0.5" width="49" height="36" rx="6" fill="url(#ktChip)" stroke="rgba(0,0,0,0.10)" />
+              <rect x="6" y="6" width="38" height="25" rx="3" fill="none" stroke="rgba(0,0,0,0.22)" />
+              <line x1="6" y1="18.5" x2="44" y2="18.5" stroke="rgba(0,0,0,0.22)" />
+              <line x1="17" y1="6" x2="17" y2="31" stroke="rgba(0,0,0,0.22)" />
+              <line x1="33" y1="6" x2="33" y2="31" stroke="rgba(0,0,0,0.22)" />
+            </svg>
+          </div>
           <div>
             <div className="b-name">EMV Test Tool</div>
             <div className="b-sub">Kart Doğrulama Konsolu</div>

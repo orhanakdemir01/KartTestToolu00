@@ -158,6 +158,13 @@ function App() {
   const now = () => new Date().toLocaleTimeString('tr-TR');
   const readerQS = () => (selectedReader ? `?reader=${encodeURIComponent(selectedReader)}` : '');
   const withReader = (obj) => (selectedReader ? { ...obj, reader: selectedReader } : obj);
+  // DUT bandı için PAN maskesi (PCI: ilk 6 BIN + son 4, ortası maskeli), 4'erli gruplu.
+  const maskPan = (pan) => {
+    const d = String(pan || '').replace(/\D/g, '');
+    if (!d) return null;
+    const shown = d.length < 10 ? d : d.slice(0, 6) + '•'.repeat(d.length - 10) + d.slice(-4);
+    return shown.replace(/(.{4})/g, '$1 ').trim();
+  };
   const addTrace = (entry) => {
     // Aktif işlemde konsolu otomatik aç (komut gönderimi, APDU izi veya "═══ … ═══" akış başlığı).
     // Pasif olaylar (kart algılandı/çıkarıldı) konsolu açmaz — çalışma alanı temiz kalır.
@@ -963,6 +970,41 @@ ${apps}
               <button className="reader-clear" onClick={() => setSelectedReader(null)} title="Otomatik seçime dön">✕ otomatik</button>
             )}
           </div>
+
+          {cardPresent && (
+            <div className="dut-strip" title="Device Under Test — test edilen kartın oturum kimliği">
+              <span className="dut-title">DUT</span>
+              {emv?.cardData?.scheme && (
+                <div className="dut-cell"><span className="dut-k">Şema</span><span className="dut-v dut-scheme">{emv.cardData.scheme}</span></div>
+              )}
+              {emv?.cardData?.pan && (
+                <div className="dut-cell" title={emv.cardData.cardholderName ? `Kart sahibi: ${emv.cardData.cardholderName}` : undefined}>
+                  <span className="dut-k">PAN</span><span className="dut-v mono">{maskPan(emv.cardData.pan)}</span>
+                </div>
+              )}
+              {emv?.applications?.[0]?.aid && (
+                <div className="dut-cell"><span className="dut-k">AID</span><span className="dut-v mono">{emv.applications[0].aid}</span></div>
+              )}
+              {emv?.cardData?.expiry && (
+                <div className="dut-cell"><span className="dut-k">Geçerlilik</span><span className="dut-v mono">{emv.cardData.expiry}</span></div>
+              )}
+              {emv?.genac?.atc && (
+                <div className="dut-cell"><span className="dut-k">ATC</span><span className="dut-v mono">{emv.genac.atc}</span></div>
+              )}
+              {card?.protocol && (
+                <div className="dut-cell"><span className="dut-k">Protokol</span><span className="dut-v mono">{card.protocol}</span></div>
+              )}
+              {card?.atr && (
+                <div className="dut-cell dut-atr" title={`ATR: ${card.atr}`}>
+                  <span className="dut-k">ATR</span>
+                  <span className="dut-v mono">{card.atr.length > 26 ? card.atr.slice(0, 26) + '…' : card.atr}</span>
+                </div>
+              )}
+              {!emv?.cardData?.pan && (
+                <span className="dut-hint">EMV akışını çalıştır → tam kart kimliği</span>
+              )}
+            </div>
+          )}
 
       {activeTab === 'card' && (
         <CardTab

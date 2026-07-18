@@ -130,9 +130,13 @@ class PcscManager {
       connected: e.connected,
       contactless: /contactless/i.test(name),
     });
-    if (preferName && this.readers.has(preferName)) {
+    // Belirli bir okuyucu istendiyse KATI davran: kart o okuyucuda yoksa null
+    // dön — farklı bir arayüze (ör. temaslı istenip temassıza) sessizce DÜŞME.
+    // Sertifikasyonda hangi arayüzün test edildiği kritiktir; fallback yanlış
+    // arayüzü doğru sanıp "GEÇTİ" raporlamaya yol açar.
+    if (preferName) {
       const e = this.readers.get(preferName);
-      if (e.present) return pick(preferName, e);
+      return e && e.present ? pick(preferName, e) : null;
     }
     for (const [name, e] of this.readers) {
       if (e.present) return pick(name, e);
@@ -147,16 +151,20 @@ class PcscManager {
   transmit(apduBuffer, preferName) {
     return new Promise((resolve, reject) => {
       let target = null;
-      if (preferName && this.readers.has(preferName)) {
+      if (preferName) {
+        // KATI: istenen okuyucuda bağlı kart yoksa BAŞKA okuyucuya düşme.
         const e = this.readers.get(preferName);
-        if (e.present && e.connected) target = e;
-      }
-      if (!target) {
+        if (e && e.present && e.connected) target = e;
+      } else {
         for (const [, e] of this.readers) {
           if (e.present && e.connected) { target = e; break; }
         }
       }
-      if (!target) return reject(new Error('No connected card available'));
+      if (!target) {
+        return reject(new Error(preferName
+          ? `İstenen okuyucuda bağlı kart yok: ${preferName}`
+          : 'No connected card available'));
+      }
 
       target.reader.transmit(apduBuffer, 512, target.protocol, (err, data) => {
         if (err) return reject(err);

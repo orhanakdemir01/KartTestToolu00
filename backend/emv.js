@@ -115,7 +115,25 @@ export const TAGS = {
   'C3': 'CIAC-Decline', 'C4': 'CIAC-Default', 'C5': 'CIAC-Online', '9F7E': 'Mobile Support Indicator',
   'D2': 'Common Currency Conversion Table', 'D8': 'Application Interchange Profile (Contactless)',
 
-  // ── Kullanıcı Excel EMV/ISO tag sözlüğünden eklenen isimler (228 tag) ──
+    // ── Mastercard M/Chip proprietary (Profile Advisor + sweep dolgusu) ──
+  'DF3A': 'AC Session Key Counter Limit (Contact)', 'DF34': 'AC Session Key Counter Limit (Contactless)', 'DF11': 'Accumulator 1 Control (Contact)',
+  'DF12': 'Accumulator 1 Control (Contactless)', 'DF28': 'Accumulator 1 CVR Dependency Data (Contact)', 'DF29': 'Accumulator 1 CVR Dependency Data (Contactless)',
+  'DF14': 'Accumulator 2 Control (Contact)', 'DF15': 'Accumulator 2 Control (Contactless)', 'DF16': 'Accumulator 2 Currency Code',
+  'DF17': 'Accumulator 2 Currency Conversion Table', 'DF2A': 'Accumulator 2 CVR Dependency Data (Contact)', 'DF2B': 'Accumulator 2 CVR Dependency Data (Contactless)',
+  'DF18': 'Accumulator 2 Lower Limit', 'DF19': 'Accumulator 2 Upper Limit', 'DF1A': 'Counter 1 Control (Contact)',
+  'DF1B': 'Counter 1 Control (Contactless)', 'DF2C': 'Counter 1 CVR Dependency Data (Contact)', 'DF2D': 'Counter 1 CVR Dependency Data (Contactless)',
+  'DF1D': 'Counter 2 Control (Contact)', 'DF1E': 'Counter 2 Control (Contactless)', 'DF2E': 'Counter 2 CVR Dependency Data (Contact)',
+  'DF2F': 'Counter 2 CVR Dependency Data (Contactless)', 'DF1F': 'Counter 2 Lower Limit', 'DF21': 'Counter 2 Upper Limit',
+  'DF3C': 'CVR Issuer Discretionary Data (Contact)', 'DF3D': 'CVR Issuer Discretionary Data (Contactless)', 'DF30': 'Interface Enabling Switch',
+  'DF3E': 'Interface Identifier (Contact)', 'DF24': 'Maximum Transaction Amount Currency Code', 'DF22': 'Maximum Transaction Amount CVM (Contact)',
+  'DF23': 'Maximum Transaction Amount CVM (Contactless)', 'DF25': 'Maximum Transaction Amount NoCVM (Contact)', 'DF26': 'Maximum Transaction Amount NoCVM (Contactless)',
+  'DF27': 'Number of Days Offline Limit', 'DF36': 'PIN Decipherments Error Counter Limit', 'DF3F': 'Read Record Filter (Contact)',
+  'DF32': 'SMI Session Key Counter Limit (Contact)', 'DF33': 'SMI Session Key Counter Limit (Contactless)', 'C0': 'M/Chip Proprietary',
+  'CC': 'M/Chip Proprietary', 'D0': 'M/Chip Proprietary', 'D4': 'M/Chip Proprietary',
+  'DE': 'M/Chip Proprietary', 'DF02': 'M/Chip Proprietary', 'DF31': 'M/Chip Proprietary',
+  'DF35': 'M/Chip Proprietary', 'DF37': 'M/Chip Proprietary', 'DF38': 'M/Chip Proprietary',
+  'DF39': 'M/Chip Proprietary', 'DF3B': 'M/Chip Proprietary', 'DF40': 'M/Chip Proprietary',
+// ── Kullanıcı Excel EMV/ISO tag sözlüğünden eklenen isimler (228 tag) ──
   '5B': 'Name of an individual', '5C': 'Tag list', '5E': 'Proprietary login data',
   '5F21': 'Track 1, identical to the data coded', '5F22': 'Track 2, identical to the data coded', '5F23': 'Track 3, identical to the data coded',
   '5F26': 'Date, Card Effective', '5F27': 'Interchange control', '5F29': 'Interchange profile',

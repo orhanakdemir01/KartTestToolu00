@@ -16,7 +16,7 @@ const dynState = (d) => {
 };
 
 // One interface's verification result: verdict banner + reused OdaPanel detail.
-function OdaResult({ res, label, busy, onRun, clear }) {
+function OdaResult({ res, label, busy, onRun, clear, present }) {
   const oda = res && !res.error ? res.oda : null;
   const dynamics = oda ? (oda.dynamics && oda.dynamics.length ? oda.dynamics : (oda.dynamic ? [oda.dynamic] : [])) : [];
   const realDyns = dynamics.filter((d) => d.kind !== 'none');
@@ -36,7 +36,9 @@ function OdaResult({ res, label, busy, onRun, clear }) {
   return (
     <div className={`oda-iface ${verdict ? verdict.cls : ''}`}>
       <div className="oda-iface-head">
-        <button className="btn" disabled={!!busy} onClick={onRun}>{busy ? 'Doğrulanıyor…' : `${label} Doğrula`}</button>
+        <button className="btn" disabled={!!busy || !present} onClick={onRun}
+          title={!present ? `${label} yuvada kart yok` : undefined}>{busy ? 'Doğrulanıyor…' : `${label} Doğrula`}</button>
+        {!present && !busy && <span className="iface-nocard">○ yuvada kart yok</span>}
         {res && <button className="btn-sm ghost" onClick={clear}>temizle</button>}
       </div>
 
@@ -66,7 +68,7 @@ function OdaResult({ res, label, busy, onRun, clear }) {
   );
 }
 
-export function OdaTab({ odaContact, odaContactless, odaBusy, runOdaVerify, clearOda }) {
+export function OdaTab({ odaContact, odaContactless, odaBusy, runOdaVerify, clearOda, contactPresent, contactlessPresent }) {
   return (
     <section className="panel">
       <div className="panel-head">
@@ -76,9 +78,9 @@ export function OdaTab({ odaContact, odaContactless, odaBusy, runOdaVerify, clea
       <p className="muted small">Kartın <b>offline sertifika zincirini</b> (CAPK → Issuer PK → ICC PK) ve <b>CDA dinamik imzasını</b> (GENERATE AC P1=0x90 → SDAD) doğrular. Her iki arayüzü ayrı ayrı test et. CAPK'ler <b>CA Anahtarları</b> sekmesinden yönetilir.</p>
 
       <div className="oda-grid">
-        <OdaResult res={odaContact} label="🔌 Temaslı" busy={odaBusy === 'contact'}
+        <OdaResult res={odaContact} label="🔌 Temaslı" busy={odaBusy === 'contact'} present={contactPresent}
           onRun={() => runOdaVerify('contact')} clear={() => clearOda('contact')} />
-        <OdaResult res={odaContactless} label="📶 Temassız" busy={odaBusy === 'contactless'}
+        <OdaResult res={odaContactless} label="📶 Temassız" busy={odaBusy === 'contactless'} present={contactlessPresent}
           onRun={() => runOdaVerify('contactless')} clear={() => clearOda('contactless')} />
       </div>
     </section>

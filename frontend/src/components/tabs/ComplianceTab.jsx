@@ -114,7 +114,7 @@ function MatrixView({ contact, contactless }) {
   );
 }
 
-function ComplianceResult({ res, label, busy, onRun, clear }) {
+function ComplianceResult({ res, label, busy, onRun, clear, present }) {
   const [filter, setFilter] = useState('all');
   const c = res && !res.error ? res.compliance : null;
   const v = c ? VERDICT[c.summary.verdict] : null;
@@ -128,7 +128,9 @@ function ComplianceResult({ res, label, busy, onRun, clear }) {
   return (
     <div className={`oda-iface ${v ? v.cls : ''}`}>
       <div className="oda-iface-head">
-        <button className="btn" disabled={!!busy} onClick={onRun}>{busy ? 'Denetleniyor…' : `${label} Denetle`}</button>
+        <button className="btn" disabled={!!busy || !present} onClick={onRun}
+          title={!present ? `${label} yuvada kart yok` : undefined}>{busy ? 'Denetleniyor…' : `${label} Denetle`}</button>
+        {!present && !busy && <span className="iface-nocard">○ yuvada kart yok</span>}
         {c && <button className="btn-sm ghost" onClick={dl}>↧ Rapor (HTML)</button>}
         {res && <button className="btn-sm ghost" onClick={clear}>temizle</button>}
       </div>
@@ -180,7 +182,7 @@ function ComplianceResult({ res, label, busy, onRun, clear }) {
   );
 }
 
-export function ComplianceTab({ compContact, compContactless, compBusy, runComplianceCheck, clearCompliance }) {
+export function ComplianceTab({ compContact, compContactless, compBusy, runComplianceCheck, clearCompliance, contactPresent, contactlessPresent }) {
   return (
     <section className="panel">
       <div className="panel-head">
@@ -193,9 +195,9 @@ export function ComplianceTab({ compContact, compContactless, compBusy, runCompl
         <MatrixView contact={compContact.compliance} contactless={compContactless.compliance} />}
 
       <div className="oda-grid">
-        <ComplianceResult res={compContact} label="🔌 Temaslı" busy={compBusy === 'contact'}
+        <ComplianceResult res={compContact} label="🔌 Temaslı" busy={compBusy === 'contact'} present={contactPresent}
           onRun={() => runComplianceCheck('contact')} clear={() => clearCompliance('contact')} />
-        <ComplianceResult res={compContactless} label="📶 Temassız" busy={compBusy === 'contactless'}
+        <ComplianceResult res={compContactless} label="📶 Temassız" busy={compBusy === 'contactless'} present={contactlessPresent}
           onRun={() => runComplianceCheck('contactless')} clear={() => clearCompliance('contactless')} />
       </div>
     </section>

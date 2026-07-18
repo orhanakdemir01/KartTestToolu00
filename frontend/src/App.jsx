@@ -158,6 +158,9 @@ function App() {
   const now = () => new Date().toLocaleTimeString('tr-TR');
   const readerQS = () => (selectedReader ? `?reader=${encodeURIComponent(selectedReader)}` : '');
   const withReader = (obj) => (selectedReader ? { ...obj, reader: selectedReader } : obj);
+  // Belirli bir arayüzün fiziksel okuyucusunda kart var mı — arayüz-bazlı buton
+  // kontrolü (temaslı denetimi temaslı yuvada kart yokken engelle).
+  const ifaceHasCard = (iface) => readerStatus.some((s) => s.present && (iface === 'contactless' ? s.contactless : !s.contactless));
   // DUT bandı için PAN maskesi (PCI: ilk 6 BIN + son 4, ortası maskeli), 4'erli gruplu.
   const maskPan = (pan) => {
     const d = String(pan || '').replace(/\D/g, '');
@@ -1058,12 +1061,14 @@ ${apps}
 
       {activeTab === 'oda' && (
         <OdaTab odaContact={odaContact} odaContactless={odaContactless} odaBusy={odaBusy}
-          runOdaVerify={runOdaVerify} clearOda={clearOda} />
+          runOdaVerify={runOdaVerify} clearOda={clearOda}
+          contactPresent={ifaceHasCard('contact')} contactlessPresent={ifaceHasCard('contactless')} />
       )}
 
       {activeTab === 'compliance' && (
         <ComplianceTab compContact={compContact} compContactless={compContactless} compBusy={compBusy}
-          runComplianceCheck={runComplianceCheck} clearCompliance={clearCompliance} />
+          runComplianceCheck={runComplianceCheck} clearCompliance={clearCompliance}
+          contactPresent={ifaceHasCard('contact')} contactlessPresent={ifaceHasCard('contactless')} />
       )}
 
       {activeTab === 'profilepdf' && (

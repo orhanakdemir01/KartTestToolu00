@@ -115,7 +115,9 @@ export const TAGS = {
   'C3': 'CIAC-Decline', 'C4': 'CIAC-Default', 'C5': 'CIAC-Online', '9F7E': 'Mobile Support Indicator',
   'D2': 'Common Currency Conversion Table', 'D8': 'Application Interchange Profile (Contactless)',
 
-    // ── Mastercard M/Chip proprietary (Profile Advisor + sweep dolgusu) ──
+      // ── Terminal-config sözlüğünden eksik tag'ler ──
+  'DF01': 'Application Selection Indicator (ASI)', 'DF13': 'TAC-Denial (terminal)',
+// ── Mastercard M/Chip proprietary (Profile Advisor + sweep dolgusu) ──
   'DF3A': 'AC Session Key Counter Limit (Contact)', 'DF34': 'AC Session Key Counter Limit (Contactless)', 'DF11': 'Accumulator 1 Control (Contact)',
   'DF12': 'Accumulator 1 Control (Contactless)', 'DF28': 'Accumulator 1 CVR Dependency Data (Contact)', 'DF29': 'Accumulator 1 CVR Dependency Data (Contactless)',
   'DF14': 'Accumulator 2 Control (Contact)', 'DF15': 'Accumulator 2 Control (Contactless)', 'DF16': 'Accumulator 2 Currency Code',

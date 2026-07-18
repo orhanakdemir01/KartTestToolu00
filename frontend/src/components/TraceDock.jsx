@@ -3,7 +3,7 @@ import { ApduTraceEntry, VerifyTraceEntry, TraceLine } from './TraceEntries.jsx'
 // Always-visible trace dock at the bottom: APDU/verify/plain entries + export
 export function TraceDock({ trace, traceOpen, setTraceOpen, exportTrace, clearTrace, traceRef }) {
   return (
-    <section className="panel trace-dock">
+    <section className={`panel trace-dock ${traceOpen ? '' : 'trace-collapsed'}`}>
       <div className="panel-head">
         <h2 className="trace-toggle" onClick={() => setTraceOpen((o) => !o)}>{traceOpen ? '▾' : '▸'} Trace <span className="trace-n">{trace.length}</span></h2>
         <div className="trace-actions">

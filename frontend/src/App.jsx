@@ -104,7 +104,7 @@ function App() {
   const [trace, setTrace] = useState([]);
   const [activeTab, setActiveTab] = useState('card');
   const [groupLast, setGroupLast] = useState({}); // remember last sub-tab per group
-  const [traceOpen, setTraceOpen] = useState(true);
+  const [traceOpen, setTraceOpen] = useState(false);
   const [uid, setUid] = useState(null);
   const [uidBusy, setUidBusy] = useState(false);
   const [capks, setCapks] = useState([]);
@@ -158,7 +158,14 @@ function App() {
   const now = () => new Date().toLocaleTimeString('tr-TR');
   const readerQS = () => (selectedReader ? `?reader=${encodeURIComponent(selectedReader)}` : '');
   const withReader = (obj) => (selectedReader ? { ...obj, reader: selectedReader } : obj);
-  const addTrace = (entry) => setTrace((p) => [...p, { ...entry, time: now() }]);
+  const addTrace = (entry) => {
+    // Aktif işlemde konsolu otomatik aç (komut gönderimi, APDU izi veya "═══ … ═══" akış başlığı).
+    // Pasif olaylar (kart algılandı/çıkarıldı) konsolu açmaz — çalışma alanı temiz kalır.
+    if (entry.kind === 'send' || entry.apdu || entry.verify || (entry.msg && entry.msg.includes('═══'))) {
+      setTraceOpen(true);
+    }
+    setTrace((p) => [...p, { ...entry, time: now() }]);
+  };
 
   // ── Two-level tab navigation ──
   const activeGroup = TAB_GROUPS.find((g) => g.tabs.some((t) => t.id === activeTab)) || TAB_GROUPS[0];

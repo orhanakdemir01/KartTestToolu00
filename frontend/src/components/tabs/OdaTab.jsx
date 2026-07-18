@@ -1,4 +1,5 @@
 import { OdaPanel } from '../OdaPanel.jsx';
+import { VerdictBanner } from '../VerdictBanner.jsx';
 
 // "Offline Sertifika" tab: focused offline data-authentication / CDA certificate
 // verification for Mastercard / Visa / Amex on BOTH contact and contactless. It
@@ -36,7 +37,6 @@ function OdaResult({ res, label, busy, onRun, clear }) {
     <div className={`oda-iface ${verdict ? verdict.cls : ''}`}>
       <div className="oda-iface-head">
         <button className="btn" disabled={!!busy} onClick={onRun}>{busy ? 'Doğrulanıyor…' : `${label} Doğrula`}</button>
-        {oda && <span className={`oda-badge ${verdict.cls}`}>{verdict.text}</span>}
         {res && <button className="btn-sm ghost" onClick={clear}>temizle</button>}
       </div>
 
@@ -44,6 +44,7 @@ function OdaResult({ res, label, busy, onRun, clear }) {
       {res?.error && <p className="err-text">✗ {res.error}</p>}
 
       {oda && <>
+        <VerdictBanner cls={verdict.cls} text={verdict.text} />
         <div className="oda-info">
           <span className="oda-chip">{res.scheme || '?'}</span>
           {res.aid && <span className="mono small">{res.aid}</span>}

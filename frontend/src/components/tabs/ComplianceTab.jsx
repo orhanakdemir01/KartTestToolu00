@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { tlvTreeHtml, TLV_CSS } from '../../lib/report.js';
+import { VerdictBanner } from '../VerdictBanner.jsx';
 
 // "Uyumluluk" tab: runs the personalisation compliance / certification rule
 // engine (EMV core + scheme, e.g. Mastercard CPV) against the card and shows a
@@ -13,6 +14,7 @@ const STATUS = {
   na: { icon: '—', cls: 'st-extra', label: 'İlgisiz' },
 };
 const SEV = { M: 'Zorunlu', R: 'Önerilen', C: 'Koşullu' };
+const vShort = (v) => (v === 'PASS' ? 'PASS' : v === 'FAIL' ? 'FAIL' : 'UYARI');
 const VERDICT = {
   PASS: { cls: 'pass', text: '✓ UYUMLU' },
   PASS_WITH_WARN: { cls: 'warn', text: '◐ UYARILARLA UYUMLU' },
@@ -77,9 +79,13 @@ function MatrixView({ contact, contactless }) {
     <div className={`oda-iface ${dv.cls}`} style={{ marginBottom: 14 }}>
       <div className="oda-iface-head">
         <b>⇄ Temaslı ↔ Temassız Matris</b>
-        <span className={`oda-badge ${dv.cls}`}>{dv.text}</span>
         <button className="btn-sm ghost" onClick={dl}>↧ Matris (HTML)</button>
       </div>
+      <VerdictBanner cls={dv.cls} text={dv.text} counts={[
+        { n: vShort(cV), label: 'temaslı', cls: cV === 'FAIL' ? 'c-bad' : cV === 'PASS' ? 'c-ok' : 'c-warn' },
+        { n: vShort(clV), label: 'temassız', cls: clV === 'FAIL' ? 'c-bad' : clV === 'PASS' ? 'c-ok' : 'c-warn' },
+        { n: diffs.length, label: 'fark', cls: diffs.length ? 'c-warn' : 'c-ok' },
+      ]} />
       <div className="oda-info">
         <span className="oda-chip">{contact.scheme || '?'}</span>
         <span className="mono small">🔌 {cV} · 📶 {clV}</span>
@@ -123,7 +129,6 @@ function ComplianceResult({ res, label, busy, onRun, clear }) {
     <div className={`oda-iface ${v ? v.cls : ''}`}>
       <div className="oda-iface-head">
         <button className="btn" disabled={!!busy} onClick={onRun}>{busy ? 'Denetleniyor…' : `${label} Denetle`}</button>
-        {c && <span className={`oda-badge ${v.cls}`}>{v.text}</span>}
         {c && <button className="btn-sm ghost" onClick={dl}>↧ Rapor (HTML)</button>}
         {res && <button className="btn-sm ghost" onClick={clear}>temizle</button>}
       </div>
@@ -132,6 +137,12 @@ function ComplianceResult({ res, label, busy, onRun, clear }) {
       {res?.error && <p className="err-text">✗ {res.error}</p>}
 
       {c && <>
+        <VerdictBanner cls={v.cls} text={v.text} counts={[
+          { n: s.pass, label: 'geçti', cls: 'c-ok' },
+          { n: s.fail, label: 'kaldı', cls: 'c-bad' },
+          { n: s.warn, label: 'uyarı', cls: 'c-warn' },
+          ...(s.na ? [{ n: s.na, label: 'ilgisiz', cls: 'c-na' }] : []),
+        ]} />
         <div className="oda-info">
           <span className="oda-chip">{c.scheme || '?'}</span>
           {c.aid && <span className="mono small">{c.aid}</span>}

@@ -515,11 +515,23 @@ if (process.env.KARTTEST_STANDALONE === '1') {
   }
 }
 
-app.listen(PORT, () => {
+const standalone = process.env.KARTTEST_STANDALONE === '1';
+const srv = app.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`);
   console.log(`PC/SC available: ${pcsc.available}`);
-  if (process.env.KARTTEST_STANDALONE === '1') {
+  if (standalone) {
     console.log('KartTest hazır — tarayıcı açılıyor. Kapatmak için bu pencereyi kapatın.');
     exec(`start "" "http://localhost:${PORT}/"`, () => {});
   }
+});
+// Port çakışması: sessizce (frontend sunmayan) başka bir sunucuya düşüp "Cannot GET /"
+// göstermek yerine, muhtemelen zaten çalışan KartTest örneğini tarayıcıda aç ve çık.
+srv.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} kullanımda — KartTest zaten çalışıyor olabilir. Mevcut örnek açılıyor.`);
+    if (standalone) exec(`start "" "http://localhost:${PORT}/"`, () => {});
+    process.exit(0);
+  }
+  console.error(`Sunucu başlatılamadı: ${err.message}`);
+  process.exit(1);
 });

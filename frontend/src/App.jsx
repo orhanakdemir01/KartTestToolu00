@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import './App.css';
-import { buildReportHtml, traceCsv, tlvTreeHtml, TLV_CSS } from './lib/report.js';
+import { traceCsv, tlvTreeHtml, TLV_CSS } from './lib/report.js';
+import { buildCertReportHtml } from './lib/certreport.js';
 import { CardTab } from './components/tabs/CardTab.jsx';
 import { ApduTab } from './components/tabs/ApduTab.jsx';
 import { TestTab } from './components/tabs/TestTab.jsx';
@@ -152,6 +153,8 @@ function App() {
   const [terminalMeta, setTerminalMeta] = useState(null);     // fields/defaults/presets
   const [scenarioResult, setScenarioResult] = useState(null);
   const [scenarioBusy, setScenarioBusy] = useState(false);
+  const [reportMeta, setReportMeta] = useState({ lab: '', operator: '', ref: '', notes: '' }); // sertifika rapor başlığı
+  const [campaignBusy, setCampaignBusy] = useState('');   // '' | 'contact' | 'contactless'
   const [conn, setConn] = useState('idle');
   const traceRef = useRef(null);
 
@@ -849,21 +852,49 @@ ${apps}
     setRaw(out.replace(/(.{2})/g, '$1 ').trim());
   };
 
+  // ── Sertifikasyon kampanyası: tek akışta tam batarya (bir arayüzde) ──
+  // EMV oku → uyumluluk → ODA sırayla; hepsi mevcut handler'ları çağırır ve
+  // sonuçları oturum state'ine yazar; master rapor bunlardan üretilir.
+  const runCampaign = async (iface) => {
+    const name = iface === 'contactless' ? 'Temassız' : 'Temaslı';
+    setCampaignBusy(iface);
+    addTrace({ kind: 'event', msg: `═══ SERTİFİKASYON KAMPANYASI (${name}) başlatıldı ═══` });
+    try {
+      await runEmv();                    // EMV verisi + kriptogram (ARQC)
+      await runComplianceCheck(iface);   // perso uyumluluk (şema kuralları)
+      await runOdaVerify(iface);         // offline sertifika zinciri + dinamik imza
+      addTrace({ kind: 'event', msg: `═══ Kampanya tamamlandı (${name}) — Rapor sekmesinden dışa aktar ═══` });
+    } catch {
+      addTrace({ kind: 'error', msg: `Kampanya (${name}) kesildi` });
+    }
+    setCampaignBusy('');
+  };
+
   // ── Report / export ──
-  const reportCtx = () => ({ card, emv, testResult, trace, readers, mode });
+  const reportCtx = () => ({
+    meta: reportMeta,
+    dut: cardPresent ? {
+      scheme: emv?.cardData?.scheme, pan: maskPan(emv?.cardData?.pan), aid: emv?.applications?.[0]?.aid,
+      expiry: emv?.cardData?.expiry, cardholder: emv?.cardData?.cardholderName,
+      atc: emv?.genac?.atc, protocol: card?.protocol, atr: card?.atr,
+    } : null,
+    card, emv, testResult, trace, readers, mode,
+    compContact, compContactless, odaContact, odaContactless,
+    pinResult, verifyResult, scenarioResult,
+  });
 
   const downloadReport = () => {
-    const url = URL.createObjectURL(new Blob([buildReportHtml(reportCtx())], { type: 'text/html' }));
+    const url = URL.createObjectURL(new Blob([buildCertReportHtml(reportCtx())], { type: 'text/html' }));
     const a = document.createElement('a');
-    a.href = url; a.download = `karttest-rapor-${Date.now()}.html`; a.click();
+    a.href = url; a.download = `karttest-sertifika-${Date.now()}.html`; a.click();
     URL.revokeObjectURL(url);
-    addTrace({ kind: 'event', msg: 'Rapor indirildi (HTML)' });
+    addTrace({ kind: 'event', msg: 'Sertifikasyon raporu indirildi (HTML)' });
   };
 
   const printReport = () => {
     const w = window.open('', '_blank');
     if (!w) { addTrace({ kind: 'error', msg: 'Pop-up engellendi — yazdırma açılamadı' }); return; }
-    w.document.write(buildReportHtml(reportCtx()));
+    w.document.write(buildCertReportHtml(reportCtx()));
     w.document.close();
     w.focus();
     setTimeout(() => w.print(), 300);
@@ -1085,7 +1116,13 @@ ${apps}
 
       {activeTab === 'report' && (
         <ReportTab downloadReport={downloadReport} printReport={printReport}
-          card={card} emv={emv} testResult={testResult} trace={trace} />
+          reportMeta={reportMeta} setReportMeta={setReportMeta}
+          runCampaign={runCampaign} campaignBusy={campaignBusy}
+          contactPresent={ifaceHasCard('contact')} contactlessPresent={ifaceHasCard('contactless')}
+          card={card} emv={emv} testResult={testResult} trace={trace}
+          compContact={compContact} compContactless={compContactless}
+          odaContact={odaContact} odaContactless={odaContactless}
+          pinResult={pinResult} verifyResult={verifyResult} scenarioResult={scenarioResult} />
       )}
 
           <TraceDock trace={trace} traceOpen={traceOpen} setTraceOpen={setTraceOpen}

@@ -34,7 +34,12 @@ function odaVerdict(res) {
 function cryptoVerdict(emv) {
   const v = emv?.genac?.verify;
   if (!v || v.match == null) return null;
-  return v.match ? { cls: 'pass', text: '✓ ARQC DOĞRULANDI' } : { cls: 'fail', text: '✗ ARQC UYUŞMUYOR' };
+  if (v.match) return { cls: 'pass', text: '✓ ARQC DOĞRULANDI' };
+  // Uyuşmazlık: karta PAN-bağlı doğru anahtar denendiyse gerçek kripto hatası (FAIL);
+  // yalnızca varsayılan anahtar denendiyse doğrulanamadı (WARN) — sertifikasyonu batırmaz.
+  return v.keyPanMatch
+    ? { cls: 'fail', text: '✗ ARQC UYUŞMUYOR' }
+    : { cls: 'warn', text: '◐ ARQC DOĞRULANAMADI (PAN anahtarı yok)' };
 }
 function overall(verdicts) {
   const present = verdicts.filter(Boolean);
@@ -82,9 +87,15 @@ function cryptoSection(emv) {
     ['ATC', g.atc], ['ARQC / Cryptogram', g.arqc], ['IAD', g.iad],
   ]);
   if (v && v.match != null) {
-    out += `<p class="${v.match ? 'pass' : 'fail'}"><b>${v.match ? '✓ ARQC DOĞRULANDI' : '✗ ARQC UYUŞMUYOR'}</b> — ${esc(v.keyLabel || '')}${v.keyLevel ? ` (${esc(v.keyLevel)})` : ''}</p>` + kv([
+    const realFail = !v.match && v.keyPanMatch;   // PAN-bağlı anahtar denendi, yine de tutmadı
+    const cls = v.match ? 'pass' : realFail ? 'fail' : 'muted';
+    const label = v.match ? '✓ ARQC DOĞRULANDI'
+      : realFail ? '✗ ARQC UYUŞMUYOR'
+        : '◐ ARQC DOĞRULANAMADI — bu PAN için doğru issuer anahtarı yüklü değil';
+    out += `<p class="${cls}"><b>${label}</b> — ${esc(v.keyLabel || '')}${v.keyLevel ? ` (${esc(v.keyLevel)})` : ''}</p>` + kv([
       ['Hesaplanan', v.computed], ['Kart ARQC', v.cardArqc], ['Session Key', v.sessionKey], ['MAC girdisi', v.inputData],
     ]);
+    if (!v.match && !realFail) out += `<p class="muted">Not: Kripto doğrulama tamamlanamadı (kart hatası değil). Doğru anahtarı "İşlem Anahtarları" sekmesinden yükleyip tekrar deneyin.</p>`;
   } else if (v?.noKey) {
     out += `<p class="muted">⚠ Bu PAN için işlem anahtarı yok — ARQC doğrulanamadı.</p>`;
   }

@@ -215,6 +215,11 @@ export async function runEmvFlow(preferReader, body = {}) {
     }
     // Run ARQC verification for a parsed cryptogram object using the terminal data (defs)
     // that produced it (PDOL data for qVSDC, CDOL1 data for GENERATE AC).
+    // Kartın PAN'ına gerçekten bağlı (varsayılan/wildcard değil) bir anahtar var mı?
+    // Bu bayrak, ARQC uyuşmazlığının "gerçek kripto hatası" mı yoksa "doğru issuer
+    // anahtarı yüklü değil → doğrulanamadı" mı olduğunu ayırt etmek için raporlanır.
+    const cleanPan = (x) => String(x || '').replace(/\D/g, '');
+    const isPanKey = (k) => !!(k.pan && cleanPan(k.pan) === cleanPan(cardData.pan));
     const runVerify = (g, defs, cdolData) => {
       if (!g.arqc) return;
       if (!keyList.length) { g.verify = { noKey: true }; return; }
@@ -227,11 +232,13 @@ export async function runEmvFlow(preferReader, body = {}) {
             pan: cardData.pan, psn: cardData.panSequence || k.psn, atc: g.atc, un: defs['9F37'],
             base, cdol: cdolData || '', aip: aip || '', iad: g.iad || '', cardArqc: g.arqc, aid,
             amount: defs['9F02'], currency: defs['5F2A'] });
-          if (r.match) { g.verify = { ...r, keyLabel: k.label }; return; }
+          if (r.match) { g.verify = { ...r, keyLabel: k.label, keyPanMatch: isPanKey(k) }; return; }
           if (!firstResult) firstResult = { ...r, keyLabel: k.label };
         } catch (e) { if (!firstResult) firstResult = { error: e.message, keyLabel: k.label }; }
       }
-      g.verify = firstResult;
+      // Hiç eşleşme yok: karta PAN-bağlı anahtar denendiyse gerçek uyuşmazlık,
+      // aksi halde (yalnızca varsayılan anahtarlar) "doğrulanamadı".
+      g.verify = { ...firstResult, keyPanMatch: keyList.some(isPanKey) };
     };
 
     // ── ODA certificate chain (Issuer PK → ICC PK) — recovered BEFORE the cryptogram so the

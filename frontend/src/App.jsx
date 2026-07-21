@@ -171,14 +171,10 @@ function App() {
     const shown = d.length < 10 ? d : d.slice(0, 6) + '•'.repeat(d.length - 10) + d.slice(-4);
     return shown.replace(/(.{4})/g, '$1 ').trim();
   };
-  const addTrace = (entry) => {
-    // Aktif işlemde konsolu otomatik aç (komut gönderimi, APDU izi veya "═══ … ═══" akış başlığı).
-    // Pasif olaylar (kart algılandı/çıkarıldı) konsolu açmaz — çalışma alanı temiz kalır.
-    if (entry.kind === 'send' || entry.apdu || entry.verify || (entry.msg && entry.msg.includes('═══'))) {
-      setTraceOpen(true);
-    }
-    setTrace((p) => [...p, { ...entry, time: now() }]);
-  };
+  // Trace konsolu YALNIZCA kullanıcı başlığa (▸ Trace) tıklayınca açılır; otomatik
+  // açılmaz. Böylece çok satır üreten işlemlerin (ör. Kart Image) üstteki sonucu
+  // trace tarafından örtülmez. Sayaç yine artar, aktivite görünür kalır.
+  const addTrace = (entry) => setTrace((p) => [...p, { ...entry, time: now() }]);
 
   // ── Two-level tab navigation ──
   const activeGroup = TAB_GROUPS.find((g) => g.tabs.some((t) => t.id === activeTab)) || TAB_GROUPS[0];

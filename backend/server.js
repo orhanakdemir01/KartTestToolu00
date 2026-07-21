@@ -520,8 +520,8 @@ const srv = app.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`);
   console.log(`PC/SC available: ${pcsc.available}`);
   if (standalone) {
-    console.log('KartTest hazır — tarayıcı açılıyor. Kapatmak için bu pencereyi kapatın.');
-    exec(`start "" "http://localhost:${PORT}/"`, () => {});
+    console.log('KartTest hazır — tarayıcı açılıyor.');
+    exec(`start "" "http://localhost:${PORT}/"`, { windowsHide: true }, () => {});
   }
 });
 // Port çakışması: sessizce (frontend sunmayan) başka bir sunucuya düşüp "Cannot GET /"
@@ -529,7 +529,7 @@ const srv = app.listen(PORT, () => {
 srv.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
     console.error(`Port ${PORT} kullanımda — KartTest zaten çalışıyor olabilir. Mevcut örnek açılıyor.`);
-    if (standalone) exec(`start "" "http://localhost:${PORT}/"`, () => {});
+    if (standalone) exec(`start "" "http://localhost:${PORT}/"`, { windowsHide: true }, () => {});
     process.exit(0);
   }
   console.error(`Sunucu başlatılamadı: ${err.message}`);

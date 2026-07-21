@@ -39,15 +39,17 @@ $prune = @(
 foreach ($p in $prune) { if (Test-Path $p) { Remove-Item $p -Recurse -Force } }
 
 Write-Host '== 4/5 launcher derleniyor (csc) =='
-& $csc -nologo -target:winexe -out:"$out\KartTest.exe" -r:System.Windows.Forms.dll "$root\packaging\launcher.cs"
+& $csc -nologo -target:winexe -out:"$out\KartTest.exe" -r:System.Windows.Forms.dll -r:System.Drawing.dll "$root\packaging\launcher.cs"
 
 Write-Host '== 5/5 OKUBENI =='
 @"
 KartTest - Smart Card / EMV Test Tool (Windows standalone)
 
 Calistirmak icin: KartTest.exe dosyasina cift tiklayin.
-- Bir konsol penceresi acilir (sunucu) ve tarayicinizda uygulama acilir.
-- Kapatmak icin konsol penceresini kapatin.
+- Uygulama arka planda (gizli) baslar ve tarayicinizda otomatik acilir.
+- Sag alttaki sistem tepsisinde KartTest simgesi belirir:
+    * cift tik / "KartTest'i Ac" -> tarayiciyi yeniden acar
+    * "Cikis" -> uygulamayi tamamen kapatir
 
 Gereksinim: SDI011 (veya PC/SC uyumlu) kart okuyucu takili olmali.
 Bu klasorun TAMAMINI birlikte tasiyin (KartTest.exe, runtime\ ve app\ birlikte gereklidir).

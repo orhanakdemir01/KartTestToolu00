@@ -19,12 +19,14 @@ import { discoverCardContext } from './carddiscover.js';
 import { extractCardImage } from './cardimage.js';
 import { runCompliance } from './compliance.js';
 import { parseProfilePdf } from './pdfprofile.js';
+import { REMOTE_TOKEN, isLoopback, lanUrls, requireRemoteAuth } from './remoteAccess.js';
 
 const app = express();
 const PORT = 3001;
 
 app.use(cors());
 app.use(express.json());
+app.use('/api', requireRemoteAuth);
 
 // ── Card / reader ───────────────────────────────────────────────────
 
@@ -487,6 +489,14 @@ app.post('/api/pin/probe', async (req, res) => {
   }
 });
 
+// GET /api/remote/info — LAN URL(s) + access token for pairing a remote
+// client. Only answers to the host machine itself (loopback); a caller
+// already on the LAN cannot use this to fish for the token.
+app.get('/api/remote/info', (req, res) => {
+  if (!isLoopback(req)) return res.status(403).json({ error: 'Bu bilgi sadece bu makineden görüntülenebilir' });
+  res.json({ token: REMOTE_TOKEN, lanUrls: lanUrls(PORT), port: PORT });
+});
+
 // GET /api/health
 app.get('/api/health', (req, res) => {
   res.json({
@@ -518,6 +528,11 @@ if (process.env.KARTTEST_STANDALONE === '1') {
 app.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`);
   console.log(`PC/SC available: ${pcsc.available}`);
+  const lans = lanUrls(PORT);
+  if (lans.length) {
+    console.log(`Uzaktan erişim (LAN): ${lans.join(', ')}`);
+    console.log(`Erişim token'ı: ${REMOTE_TOKEN}`);
+  }
   if (process.env.KARTTEST_STANDALONE === '1') {
     console.log('KartTest hazır — tarayıcı açılıyor. Kapatmak için bu pencereyi kapatın.');
     exec(`start "" "http://localhost:${PORT}/"`, () => {});

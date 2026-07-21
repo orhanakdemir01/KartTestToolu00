@@ -26,6 +26,18 @@ cd backend && npm install && node server.js      # http://localhost:3001
 cd frontend && npm install && npm run dev         # http://localhost:5173
 ```
 
+## Uzaktan Erişim (LAN)
+
+Backend, aynı ağdaki başka bir cihazdan da kontrol edilebilir: arayüzdeki
+**🌐 Uzaktan Erişim** rozetine tıklayınca (kart okuyucuyu barındıran
+makinede) LAN adresi ve tek seferlik erişim token'ı görüntülenir. Uzaktaki
+cihazda o adrese tarayıcıyla gidip aynı rozetten token'ı girmek yeterlidir.
+
+Yerel makineden (localhost) gelen istekler her zaman doğrudan çalışır; ağdan
+gelen her istek (kart okuma, APDU gönderme, PIN değiştirme dahil) token
+doğrulaması gerektirir — token her başlatmada yeniden üretilir, sabitlemek
+isterseniz `KARTTEST_REMOTE_TOKEN` ortam değişkenini kullanabilirsiniz.
+
 ## Windows dağıtımı
 
 ```powershell

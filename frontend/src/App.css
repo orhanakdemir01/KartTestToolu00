@@ -32,6 +32,23 @@ body {
 .chip-off  { background: #2a2f3a; color: #8b93a3; }
 .chip-err  { background: #3a1212; color: #f06464; }
 .chip-real { background: #10331f; color: #46d17f; }
+.chip-remote { background: #141a28; color: #4ea1ff; border: 1px solid #2a3450; cursor: pointer; }
+.chip-remote:hover { border-color: #4ea1ff; }
+
+/* Remote access panel */
+.remote-panel-backdrop { position: fixed; inset: 0; background: rgba(4, 6, 10, 0.6); z-index: 100; display: flex; align-items: center; justify-content: center; }
+.remote-panel { width: min(420px, 90vw); background: #141a28; border: 1px solid #2a3450; border-radius: 10px; padding: 20px; color: #d7dce5; }
+.remote-panel h3 { margin-bottom: 10px; color: #4ea1ff; }
+.remote-panel p { font-size: 13px; color: #aab2c0; margin: 8px 0; line-height: 1.5; }
+.remote-url-list { list-style: none; margin: 6px 0 10px; }
+.remote-url-list code { font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace; font-size: 13px; color: #46d17f; }
+.remote-token { display: block; font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace; font-size: 14px; background: #0b0e14; border: 1px solid #2a3450; border-radius: 6px; padding: 8px 10px; word-break: break-all; color: #46d17f; margin-bottom: 10px; }
+.remote-warn { color: #f0a864 !important; }
+.remote-token-input { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid #2a3450; background: #0b0e14; color: #d7dce5; font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace; margin-bottom: 10px; }
+.remote-save { background: #4ea1ff; color: #0b0e14; border: none; border-radius: 6px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
+.remote-save:disabled { opacity: 0.5; cursor: not-allowed; }
+.remote-close { display: block; margin-top: 12px; background: none; border: 1px solid #2a3450; color: #aab2c0; border-radius: 6px; padding: 6px 14px; cursor: pointer; }
+.remote-close:hover { border-color: #4ea1ff; color: #4ea1ff; }
 
 /* Reader bar */
 .reader-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }

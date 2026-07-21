@@ -14,8 +14,8 @@ import { TerminalTab } from './components/tabs/TerminalTab.jsx';
 import { ProfilePdfTab } from './components/tabs/ProfilePdfTab.jsx';
 import { ReportTab } from './components/tabs/ReportTab.jsx';
 import { TraceDock } from './components/TraceDock.jsx';
-
-const API = 'http://localhost:3001/api';
+import { RemoteAccessPanel } from './components/RemoteAccessPanel.jsx';
+import { API } from './lib/api.js';
 
 // SW1SW2 values that are expected "misses" during a GET DATA / read sweep — the
 // card simply doesn't hold that object. Muted in the trace instead of warned.
@@ -876,6 +876,7 @@ ${apps}
           <span className={`chip ${cardPresent ? 'chip-on' : 'chip-off'}`}>{cardPresent ? '▣ Kart Var' : '▢ Kart Yok'}</span>
           {mode && <span className="chip chip-real">🔌 Gerçek</span>}
           <span className={`chip ${conn === 'ok' ? 'chip-on' : 'chip-err'}`}>{conn === 'ok' ? '● Bağlı' : '● Hata'}</span>
+          <RemoteAccessPanel />
         </div>
       </header>
 

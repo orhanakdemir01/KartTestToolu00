@@ -22,7 +22,11 @@ jobs:
   build-windows:
     # Windows şart: native pcsclite derlemesi (MSVC), csc.exe (.NET Framework) ve
     # bundle'lanan node.exe hepsi Windows runner'da hazır gelir.
-    runs-on: windows-latest
+    # windows-latest ARTIK windows-2025 → node-gyp oradaki VS'yi bulamıyor
+    # ("VisualStudioFinder ... not ok"). VS 2022'nin sorunsuz çalıştığı 2022'ye sabitle.
+    runs-on: windows-2022
+    env:
+      GYP_MSVS_VERSION: 2022   # node-gyp'a hedef VS sürümünü açıkça bildir
 
     steps:
       - name: Kaynağı çek

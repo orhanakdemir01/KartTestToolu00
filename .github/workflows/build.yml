@@ -1,0 +1,80 @@
+# KartTest — tag push edilince tek dosyalık Windows binary'sini derleyip
+# GitHub Releases'a otomatik yükler.
+#
+# Proje stack'i: Node.js (Express + native @pokusew/pcsclite) backend + React/Vite
+# frontend, C# launcher stub'larıyla (packaging/*.cs, csc ile) tek dosyalık
+# self-installing Windows exe'ye paketleniyor. Bu yüzden PyInstaller/dotnet/go
+# değil, repo'nun kendi kanıtlanmış paketleme betikleri kullanılıyor:
+#   packaging/build-exe.ps1    -> dist-win/KartTest/ (standalone klasör + launcher)
+#   packaging/build-setup.ps1  -> dist-win/KartTest-Setup.exe (tek dosya, ~45 MB)
+
+name: build-release
+
+on:
+  push:
+    tags:
+      - 'v*'          # v1.0.0, v1.2.3 gibi bir tag push edilince tetiklenir
+
+permissions:
+  contents: write     # aynı repo'da Release oluşturmak/asset yüklemek için gerekli
+
+jobs:
+  build-windows:
+    # Windows şart: native pcsclite derlemesi (MSVC), csc.exe (.NET Framework) ve
+    # bundle'lanan node.exe hepsi Windows runner'da hazır gelir.
+    runs-on: windows-latest
+
+    steps:
+      - name: Kaynağı çek
+        uses: actions/checkout@v4
+
+      # setup-node KULLANMIYORUZ: build-exe.ps1, runtime olarak
+      # C:\Program Files\nodejs\node.exe'yi paketin içine kopyalar. npm ci de
+      # aynı Node ile çalışmalı ki native pcsclite.node ABI'si bundle'lanan
+      # node.exe ile eşleşsin. Windows runner'da bu Node zaten kurulu gelir.
+      - name: Node sürümünü göster
+        run: node --version
+
+      - name: Frontend bağımlılıkları
+        working-directory: frontend
+        run: npm ci
+
+      - name: Backend bağımlılıkları (native pcsclite derlenir)
+        working-directory: backend
+        run: npm ci
+
+      - name: Standalone paket (build-exe.ps1)
+        run: powershell -ExecutionPolicy Bypass -File packaging\build-exe.ps1
+
+      - name: Tek dosyalık kurulum (build-setup.ps1)
+        run: powershell -ExecutionPolicy Bypass -File packaging\build-setup.ps1
+
+      - name: Standalone klasörü ziple (installer istemeyenler için)
+        run: powershell -Command "Compress-Archive -Path dist-win\KartTest\* -DestinationPath dist-win\KartTest-standalone.zip -Force"
+
+      # Yedek: Release adımı başarısız olsa bile binary bu koşunun "Artifacts"
+      # bölümünden indirilebilir kalır.
+      - name: Artifact olarak da yükle (yedek)
+        uses: actions/upload-artifact@v4
+        with:
+          name: KartTest-${{ github.ref_name }}
+          path: |
+            dist-win/KartTest-Setup.exe
+            dist-win/KartTest-standalone.zip
+          if-no-files-found: error
+
+      - name: GitHub Release'e yükle
+        uses: softprops/action-gh-release@v2
+        with:
+          name: KartTest ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist-win/KartTest-Setup.exe
+            dist-win/KartTest-standalone.zip
+          # ── Kaynağı PRIVATE tutup binary'yi HERKESE AÇIK paylaşmak için ──
+          # Ayrı bir PUBLIC "releases" repo'suna yayınlayın (aşağıyı açın):
+          #   repository: orhanakdemir01/KartTest-releases
+          #   token: ${{ secrets.RELEASES_TOKEN }}
+          # RELEASES_TOKEN = o public repo'ya "contents: write" izinli
+          # fine-grained Personal Access Token (repo Secrets'a eklenir).

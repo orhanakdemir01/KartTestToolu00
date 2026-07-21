@@ -74,8 +74,8 @@ jobs:
           # Kaynak bu PRIVATE repo'da kalır; binary aşağıdaki PUBLIC repo'nun
           # Releases'ine yayınlanır → 3. kişiler kaynağa erişmeden indirir.
           # ÖN KOŞUL (tag atmadan ÖNCE yap):
-          #   1) orhanakdemir01/KartTest-releases adında bir PUBLIC repo aç (README yeter)
+          #   1) orhanakdemir01/KartTestToolu00--releases PUBLIC repo (oluşturuldu ✓)
           #   2) o repo'ya "contents: write" izinli fine-grained PAT üret
           #   3) bu private repo'ya Settings → Secrets → Actions'ta RELEASES_TOKEN olarak ekle
-          repository: orhanakdemir01/KartTest-releases
+          repository: orhanakdemir01/KartTestToolu00--releases
           token: ${{ secrets.RELEASES_TOKEN }}

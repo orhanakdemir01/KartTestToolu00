@@ -1,8 +1,12 @@
 import { useState } from 'react';
+import { buildComparison } from '../../lib/compare.js';
+import { CompareView } from '../CompareView.jsx';
 
-// "Oturum" sekmesi: test oturumunun tüm sonuçlarını tek dosyaya kaydet / geri yükle.
-// Sertifikasyon iş akışı: test et → kaydet → ara ver → yükle → devam et / karşılaştır.
-// Kaydetme/yükleme mantığı App.jsx'te (buildSnapshot/applySnapshot); bu bileşen sadece UI.
+// "Oturum" sekmesi: test oturumunun tüm sonuçlarını tek dosyaya kaydet / geri yükle
+// ve iki oturumu karşılaştır. Sertifikasyon iş akışı: test et → kaydet → ara ver →
+// yükle → devam et / karşılaştır. Kaydet/yükle mantığı App.jsx'te; bu bileşen UI.
+
+const CURRENT = '__current__';
 
 const RESULT_LABELS = [
   ['emv', 'EMV Okuma'],
@@ -19,10 +23,29 @@ const RESULT_LABELS = [
   ['testResult', 'Test Paketi'],
 ];
 
-export function SessionTab({ sessions, sessionBusy, saveSessionAs, loadSessionFile, deleteSessionFile, refresh, snapshot }) {
+export function SessionTab({ sessions, sessionBusy, saveSessionAs, loadSessionFile, deleteSessionFile, refresh, snapshot, getSnapshotState }) {
   const st = snapshot?.state || {};
   const dut = st.emv?.cardData || {};
   const present = RESULT_LABELS.filter(([k]) => st[k]);
+
+  // ── Karşılaştırma ──
+  const [selA, setSelA] = useState(CURRENT);
+  const [selB, setSelB] = useState('');
+  const [cmpBusy, setCmpBusy] = useState(false);
+  const [comparison, setComparison] = useState(null);
+  const [cmpLabels, setCmpLabels] = useState({ a: 'A', b: 'B' });
+  const labelFor = (v) => (v === CURRENT ? 'Mevcut' : (sessions.find((s) => s.file === v)?.name || v));
+  const stateFor = async (v) => (v === CURRENT ? st : await getSnapshotState(v));
+  const runCompare = async () => {
+    if (!selA || !selB || selA === selB) return;
+    setCmpBusy(true);
+    try {
+      const [a, b] = await Promise.all([stateFor(selA), stateFor(selB)]);
+      setCmpLabels({ a: labelFor(selA), b: labelFor(selB) });
+      setComparison(buildComparison(a, b));
+    } catch { setComparison(null); }
+    setCmpBusy(false);
+  };
 
   const suggested = () => {
     const scheme = dut.scheme || 'oturum';
@@ -91,6 +114,35 @@ export function SessionTab({ sessions, sessionBusy, saveSessionAs, loadSessionFi
           </div>
         )}
       </section>
+
+      <section className="panel">
+        <div className="panel-head">
+          <h2>Oturumları Karşılaştır</h2>
+          <span className="muted small">kimlik · verdikt · perso tag farkları</span>
+        </div>
+        <p className="muted small">İki oturum seç, farkları gör. <b>Mevcut</b> = şu an bellekteki (kaydedilmemiş) oturum.</p>
+        <div className="capk-add-row" style={{ alignItems: 'flex-end' }}>
+          <label style={{ flex: 1 }}>A
+            <select value={selA} onChange={(e) => setSelA(e.target.value)}>
+              <option value={CURRENT}>Mevcut oturum</option>
+              {sessions.map((s) => <option key={s.file} value={s.file}>{s.name}</option>)}
+            </select>
+          </label>
+          <label style={{ flex: 1 }}>B
+            <select value={selB} onChange={(e) => setSelB(e.target.value)}>
+              <option value="">— seç —</option>
+              <option value={CURRENT}>Mevcut oturum</option>
+              {sessions.map((s) => <option key={s.file} value={s.file}>{s.name}</option>)}
+            </select>
+          </label>
+          <button className="btn" disabled={cmpBusy || !selB || selA === selB} onClick={runCompare}>
+            {cmpBusy ? 'Karşılaştırılıyor…' : '⇄ Karşılaştır'}
+          </button>
+        </div>
+        {selB && selA === selB && <p className="err-text small">Aynı oturumu seçtin — farklı iki oturum seç.</p>}
+      </section>
+
+      {comparison && <CompareView comparison={comparison} labelA={cmpLabels.a} labelB={cmpLabels.b} />}
     </>
   );
 }

@@ -238,6 +238,14 @@ function App() {
   const deleteSessionFile = async (file) => {
     try { await fetch(`${API}/session/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file }) }); await loadSessionsList(); } catch { /* */ }
   };
+  // Kaydedilmiş bir oturumun state'ini uygulamadan yalnızca döndürür (karşılaştırma için).
+  const getSnapshotState = async (file) => {
+    try {
+      const r = await fetch(`${API}/session/load`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file }) });
+      const d = await r.json();
+      return d.snapshot?.state || null;
+    } catch { return null; }
+  };
 
   // ── Two-level tab navigation ──
   const activeGroup = TAB_GROUPS.find((g) => g.tabs.some((t) => t.id === activeTab)) || TAB_GROUPS[0];
@@ -1188,7 +1196,7 @@ ${apps}
       {activeTab === 'session' && (
         <SessionTab sessions={sessions} sessionBusy={sessionBusy}
           saveSessionAs={saveSessionAs} loadSessionFile={loadSessionFile} deleteSessionFile={deleteSessionFile}
-          refresh={loadSessionsList} snapshot={buildSnapshot()} />
+          refresh={loadSessionsList} snapshot={buildSnapshot()} getSnapshotState={getSnapshotState} />
       )}
 
           <TraceDock trace={trace} traceOpen={traceOpen} setTraceOpen={setTraceOpen}

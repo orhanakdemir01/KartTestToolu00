@@ -83,6 +83,10 @@ a:hover { color: #1a9850; text-decoration: underline; }
 /* Arayüz-bazlı "yuvada kart yok" ipucu (Denetle/Doğrula pasifken) */
 .iface-nocard { font-size: 12px; font-weight: 600; color: #a3aab0; white-space: nowrap; }
 
+/* Oturum karşılaştırma */
+.cmp-h { font-size: 12px; font-weight: 700; letter-spacing: 0.3px; color: #157a43; text-transform: uppercase; margin: 16px 0 6px; }
+.cmp-grp { margin-bottom: 12px; }
+
 /* Verdikt afişi — belirgin PASS/FAIL/WARN sonuç bandı + sayaç çipleri */
 .verdict-banner {
   display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;

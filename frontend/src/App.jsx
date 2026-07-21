@@ -14,6 +14,7 @@ import { ComplianceTab } from './components/tabs/ComplianceTab.jsx';
 import { TerminalTab } from './components/tabs/TerminalTab.jsx';
 import { ProfilePdfTab } from './components/tabs/ProfilePdfTab.jsx';
 import { ReportTab } from './components/tabs/ReportTab.jsx';
+import { SessionTab } from './components/tabs/SessionTab.jsx';
 import { TraceDock } from './components/TraceDock.jsx';
 
 const API = 'http://localhost:3001/api';
@@ -83,6 +84,7 @@ const TAB_GROUPS = [
   ] },
   { id: 'output', label: 'Sonuç & Yapılandırma', icon: '📄', tabs: [
     { id: 'report', label: 'Rapor', icon: '📊', desc: 'Oturum raporu (HTML / yazdır)' },
+    { id: 'session', label: 'Oturum', icon: '💾', desc: 'Test oturumunu kaydet / yükle / devam et' },
   ] },
 ];
 
@@ -155,6 +157,8 @@ function App() {
   const [scenarioBusy, setScenarioBusy] = useState(false);
   const [reportMeta, setReportMeta] = useState({ lab: '', operator: '', ref: '', notes: '' }); // sertifika rapor başlığı
   const [campaignBusy, setCampaignBusy] = useState('');   // '' | 'contact' | 'contactless'
+  const [sessions, setSessions] = useState([]);           // kayıtlı test oturumları listesi
+  const [sessionBusy, setSessionBusy] = useState('');     // '' | 'save' | dosya adı (yükleniyor)
   const [conn, setConn] = useState('idle');
   const traceRef = useRef(null);
 
@@ -175,6 +179,65 @@ function App() {
   // açılmaz. Böylece çok satır üreten işlemlerin (ör. Kart Image) üstteki sonucu
   // trace tarafından örtülmez. Sayaç yine artar, aktivite görünür kalır.
   const addTrace = (entry) => setTrace((p) => [...p, { ...entry, time: now() }]);
+
+  // ── Oturum kaydet / yükle ──────────────────────────────────────────────
+  // Kaydedilecek state: yalnızca sonuç + metadata (busy/UI/okuyucu/gizli anahtar
+  // HARİÇ). [değer, setter] kayıt defteri — buildSnapshot ve applySnapshot ikisini
+  // de bundan türetir; yeni bir sonuç state'i eklenince tek satır burada eklenir.
+  const sessionState = {
+    card: [card, setCard], emv: [emv, setEmv], uid: [uid, setUid], resp: [resp, setResp],
+    testResult: [testResult, setTestResult], trace: [trace, setTrace],
+    cardImage: [cardImage, setCardImage],
+    imageA: [imageA, setImageA], imageB: [imageB, setImageB],
+    imageAcl: [imageAcl, setImageAcl], imageBcl: [imageBcl, setImageBcl],
+    imageContact: [imageContact, setImageContact], imageContactless: [imageContactless, setImageContactless],
+    odaContact: [odaContact, setOdaContact], odaContactless: [odaContactless, setOdaContactless],
+    compContact: [compContact, setCompContact], compContactless: [compContactless, setCompContactless],
+    profilePdf: [profilePdf, setProfilePdf],
+    pdfCmpContact: [pdfCmpContact, setPdfCmpContact], pdfCmpContactless: [pdfCmpContactless, setPdfCmpContactless],
+    scenarioResult: [scenarioResult, setScenarioResult],
+    pinResult: [pinResult, setPinResult], verifyResult: [verifyResult, setVerifyResult],
+    selectedKeyIdx: [selectedKeyIdx, setSelectedKeyIdx],
+    terminalProfile: [terminalProfile, setTerminalProfile],
+    reportMeta: [reportMeta, setReportMeta],
+  };
+  const buildSnapshot = () => {
+    const state = {};
+    for (const k in sessionState) state[k] = sessionState[k][0];
+    return { version: 1, app: 'KartTest', savedAt: new Date().toISOString(), state };
+  };
+  const applySnapshot = (snap) => {
+    const state = snap?.state || {};
+    for (const k in sessionState) if (k in state) sessionState[k][1](state[k]);
+  };
+
+  const loadSessionsList = async () => {
+    try { const r = await fetch(`${API}/sessions`); const d = await r.json(); setSessions(d.sessions || []); } catch { /* backend yok */ }
+  };
+  const saveSessionAs = async (name) => {
+    if (!name || !name.trim()) return;
+    setSessionBusy('save');
+    try {
+      const r = await fetch(`${API}/session/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim(), snapshot: buildSnapshot() }) });
+      const d = await r.json();
+      if (d.file) { addTrace({ kind: 'ok', msg: `Oturum kaydedildi: ${d.name}` }); await loadSessionsList(); }
+      else addTrace({ kind: 'error', msg: `Oturum kaydedilemedi: ${d.error || '?'}` });
+    } catch { addTrace({ kind: 'error', msg: 'Oturum kaydedilemedi (backend?)' }); }
+    setSessionBusy('');
+  };
+  const loadSessionFile = async (file) => {
+    setSessionBusy(file);
+    try {
+      const r = await fetch(`${API}/session/load`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file }) });
+      const d = await r.json();
+      if (d.snapshot) { applySnapshot(d.snapshot); addTrace({ kind: 'ok', msg: `Oturum yüklendi: ${file}` }); }
+      else addTrace({ kind: 'error', msg: `Oturum yüklenemedi: ${d.error || '?'}` });
+    } catch { addTrace({ kind: 'error', msg: 'Oturum yüklenemedi (backend?)' }); }
+    setSessionBusy('');
+  };
+  const deleteSessionFile = async (file) => {
+    try { await fetch(`${API}/session/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file }) }); await loadSessionsList(); } catch { /* */ }
+  };
 
   // ── Two-level tab navigation ──
   const activeGroup = TAB_GROUPS.find((g) => g.tabs.some((t) => t.id === activeTab)) || TAB_GROUPS[0];
@@ -250,6 +313,7 @@ function App() {
     try { const r = await fetch(`${API}/keys`); const d = await r.json(); setSessionKeys(d.keys || []); } catch { /* */ }
   };
   useEffect(() => { loadSessionKeys(); }, []);
+  useEffect(() => { loadSessionsList(); }, []);
 
   // ── Send APDU ──
   const send = async (cmdArg) => {
@@ -1119,6 +1183,12 @@ ${apps}
           compContact={compContact} compContactless={compContactless}
           odaContact={odaContact} odaContactless={odaContactless}
           pinResult={pinResult} verifyResult={verifyResult} scenarioResult={scenarioResult} />
+      )}
+
+      {activeTab === 'session' && (
+        <SessionTab sessions={sessions} sessionBusy={sessionBusy}
+          saveSessionAs={saveSessionAs} loadSessionFile={loadSessionFile} deleteSessionFile={deleteSessionFile}
+          refresh={loadSessionsList} snapshot={buildSnapshot()} />
       )}
 
           <TraceDock trace={trace} traceOpen={traceOpen} setTraceOpen={setTraceOpen}

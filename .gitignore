@@ -8,6 +8,9 @@ dist-win/
 # Local per-change backups (large snapshots, not source of truth)
 backups/
 
+# Kaydedilen test oturumları (kullanıcı verisi, kaynak değil)
+backend/sessions/
+
 # Logs / temp
 *.log
 *.tmp

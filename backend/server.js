@@ -19,12 +19,14 @@ import { discoverCardContext } from './carddiscover.js';
 import { extractCardImage } from './cardimage.js';
 import { runCompliance } from './compliance.js';
 import { parseProfilePdf } from './pdfprofile.js';
+import { listSessions, saveSession, loadSession, deleteSession } from './sessions.js';
 
 const app = express();
 const PORT = 3001;
 
 app.use(cors());
-app.use(express.json());
+// Oturum snapshot'ları (kart image + PDF + trace) büyük olabilir → varsayılan 100kb yetmez.
+app.use(express.json({ limit: '25mb' }));
 
 // ── Card / reader ───────────────────────────────────────────────────
 
@@ -292,6 +294,29 @@ app.post('/api/keys/get', (req, res) => {
 
 app.post('/api/keys/delete', (req, res) => {
   res.json(deleteKeySet(req.body?.label, req.body?.pan));
+});
+
+// ── Oturum kaydet / yükle — test oturumunun tüm sonuçlarını dosyaya al ────
+app.get('/api/sessions', (req, res) => {
+  try { res.json({ sessions: listSessions() }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/session/save', (req, res) => {
+  const { name, snapshot } = req.body || {};
+  if (!name || !snapshot) return res.status(400).json({ error: 'name ve snapshot gerekli' });
+  try { res.json(saveSession(name, snapshot)); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/session/load', (req, res) => {
+  const snapshot = loadSession(req.body?.file || '');
+  if (!snapshot) return res.status(404).json({ error: 'Oturum bulunamadı' });
+  res.json({ snapshot });
+});
+
+app.post('/api/session/delete', (req, res) => {
+  res.json({ deleted: deleteSession(req.body?.file || '') });
 });
 
 // ── Change PIN (EMV PIN CHANGE/UNBLOCK, issuer script 84 24) ─────────

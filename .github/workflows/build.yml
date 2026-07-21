@@ -63,18 +63,19 @@ jobs:
             dist-win/KartTest-standalone.zip
           if-no-files-found: error
 
-      - name: GitHub Release'e yükle
+      - name: GitHub Release'e yükle (ayrı PUBLIC releases repo'su)
         uses: softprops/action-gh-release@v2
         with:
           name: KartTest ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
-          generate_release_notes: true
           files: |
             dist-win/KartTest-Setup.exe
             dist-win/KartTest-standalone.zip
-          # ── Kaynağı PRIVATE tutup binary'yi HERKESE AÇIK paylaşmak için ──
-          # Ayrı bir PUBLIC "releases" repo'suna yayınlayın (aşağıyı açın):
-          #   repository: orhanakdemir01/KartTest-releases
-          #   token: ${{ secrets.RELEASES_TOKEN }}
-          # RELEASES_TOKEN = o public repo'ya "contents: write" izinli
-          # fine-grained Personal Access Token (repo Secrets'a eklenir).
+          # Kaynak bu PRIVATE repo'da kalır; binary aşağıdaki PUBLIC repo'nun
+          # Releases'ine yayınlanır → 3. kişiler kaynağa erişmeden indirir.
+          # ÖN KOŞUL (tag atmadan ÖNCE yap):
+          #   1) orhanakdemir01/KartTest-releases adında bir PUBLIC repo aç (README yeter)
+          #   2) o repo'ya "contents: write" izinli fine-grained PAT üret
+          #   3) bu private repo'ya Settings → Secrets → Actions'ta RELEASES_TOKEN olarak ekle
+          repository: orhanakdemir01/KartTest-releases
+          token: ${{ secrets.RELEASES_TOKEN }}

@@ -189,7 +189,8 @@ export async function extractCardImage(preferReader, opts = {}) {
     }
     const rid = app.aid.slice(0, 10);
     const scheme = rid === 'A000000003' ? 'Visa' : rid === 'A000000004' ? 'Mastercard'
-      : rid === 'A000000025' ? 'Amex' : rid === 'A000000672' ? 'Troy' : null;
+      : rid === 'A000000025' ? 'Amex' : rid === 'A000000672' ? 'Troy'
+      : (rid === 'A000000152' || rid === 'A000000324') ? 'Discover' : null;
     const cplcNode = getData.find((g) => g.tag === '9F7F');
     applications.push({
       aid: app.aid, label: app.label, source: app.source, scheme, rid,

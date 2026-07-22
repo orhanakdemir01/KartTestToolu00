@@ -69,6 +69,7 @@ const CAT_SPEC = {
   'Mastercard CPV': 'M/Chip Requirements · CPV',
   'Visa VIS/qVSDC': 'Visa VIS 1.6 · VCPS 2.x (qVSDC)',
   'Amex': 'Amex AEIPS 3.x',
+  'Discover D-PAS': 'Discover D-PAS 1.x',
   'Troy D-PAS': 'Troy D-PAS',
   'ODA Kripto': 'EMV Bk2 · §6 (RSA/SDAD)',
 };
@@ -174,6 +175,23 @@ const RULES = [
     run: (c) => { const v = c.val('9F10') || c.genac?.iad; return v ? PASS(v) : (c.hasCrypto ? FAIL('—', 'IAD yok') : WARN('—')); } },
   { id: 'AX-03', cat: 'Amex', sev: 'R', scheme: 'Amex', req: 'IAC Default/Denial/Online (9F0D/0E/0F) mevcut',
     run: (c) => { const iac = ['9F0D', '9F0E', '9F0F'].filter((t) => c.has(t)); return iac.length === 3 ? PASS('IAC tam') : WARN(`var: ${iac.join(',') || 'yok'}`); } },
+  { id: 'AX-04', cat: 'Amex', sev: 'M', scheme: 'Amex', req: 'IAD (9F10) AEIPS formatı — makul uzunluk + CVN çıkarımı',
+    run: (c) => { const v = c.val('9F10') || c.genac?.iad; if (!v) return c.hasCrypto ? FAIL('—', 'IAD yok') : NA('IAD yok'); if (v.length < 8) return FAIL(v, 'IAD çok kısa (AEIPS ≥ 4 bayt)'); return PASS(`CVN=${v.slice(2, 4)} · ${v.length / 2} bayt`); } },
+  { id: 'AX-05', cat: 'Amex', sev: 'R', scheme: 'Amex', req: 'Application Effective Date (5F25) varsa geçerli YYMMDD',
+    run: (c) => { const v = c.val('5F25'); if (!v) return WARN('—', '5F25 önerilir'); return /^[0-9]{6}$/.test(v) ? PASS(v) : FAIL(v, 'YYMMDD değil'); } },
+
+  // ── Discover (D-PAS, şema-özel) ────────────────────────────────────────
+  { id: 'DIS-01', cat: 'Discover D-PAS', sev: 'M', scheme: 'Discover', req: 'Application Version Number (9F08) mevcut',
+    run: (c) => c.has('9F08') ? PASS(c.val('9F08')) : FAIL('—') },
+  { id: 'DIS-02', cat: 'Discover D-PAS', sev: 'M', scheme: 'Discover', req: 'Issuer Application Data (9F10) mevcut',
+    run: (c) => { const v = c.val('9F10') || c.genac?.iad; return v ? PASS(v + (c.has('9F10') ? '' : ' (GENERATE AC)')) : (c.hasCrypto ? FAIL('—', 'IAD yok') : WARN('—', 'Kripto akışı çalışmadı')); } },
+  { id: 'DIS-03', cat: 'Discover D-PAS', sev: 'R', scheme: 'Discover', req: 'IAC Default/Denial/Online (9F0D/0E/0F) mevcut',
+    run: (c) => { const iac = ['9F0D', '9F0E', '9F0F'].filter((t) => c.has(t)); return iac.length === 3 ? PASS('IAC tam') : WARN(`var: ${iac.join(',') || 'yok'}`); } },
+  { id: 'DIS-04', cat: 'Discover D-PAS', sev: 'R', scheme: 'Discover', req: 'Application Usage Control (9F07) mevcut',
+    run: (c) => c.has('9F07') ? PASS(c.val('9F07')) : WARN('—', 'AUC önerilir') },
+  { id: 'DIS-05', cat: 'Discover D-PAS', sev: 'C', scheme: 'Discover', iface: 'contactless', spec: 'D-PAS Contactless',
+    req: 'Temassız: PDOL (9F38) mevcut (D-PAS GPO)',
+    run: (c) => { const v = c.val('9F38'); if (!v) return WARN('—', 'PDOL yok — temassız GPO PDOL bekler'); const d = validDol(v); return d.ok ? PASS(`${d.entries.length} tag`) : FAIL(v.slice(0, 20), 'Geçersiz PDOL'); } },
 
   // ── Troy (D-PAS, şema-özel) ────────────────────────────────────────────
   { id: 'TR-01', cat: 'Troy D-PAS', sev: 'M', scheme: 'Troy', req: 'Application Version Number (9F08) mevcut',

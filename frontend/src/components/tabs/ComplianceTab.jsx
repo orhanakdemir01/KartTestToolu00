@@ -121,6 +121,13 @@ function ComplianceResult({ res, label, busy, onRun, clear, present }) {
   const v = c ? VERDICT[c.summary.verdict] : null;
   const s = c?.summary;
 
+  // Kapsam: bu denetimin hangi spec kaynaklarına karşı, kaç kuralla yapıldığı.
+  const allRules = c ? c.categories.flatMap((cat) => cat.rules) : [];
+  const sevCount = { M: 0, R: 0, C: 0 };
+  const bySpec = {};
+  for (const r of allRules) { if (sevCount[r.sev] != null) sevCount[r.sev]++; const k = r.spec || '—'; bySpec[k] = (bySpec[k] || 0) + 1; }
+  const specRows = Object.entries(bySpec).sort((a, b) => b[1] - a[1]);
+
   const dl = () => {
     const url = URL.createObjectURL(new Blob([reportHtml(res)], { type: 'text/html' }));
     const a = document.createElement('a'); a.href = url; a.download = `uyumluluk-${c.scheme || 'emv'}-${c.iface}-${Date.now()}.html`; a.click(); URL.revokeObjectURL(url);
@@ -156,6 +163,18 @@ function ComplianceResult({ res, label, busy, onRun, clear, present }) {
             <button key={k} className={`prof-chip ${cls} ${filter === k ? 'sel' : ''}`} disabled={k !== 'all' && !n} onClick={() => setFilter(filter === k ? 'all' : k)}>{lbl} <b>{n}</b></button>
           ))}
         </div>
+        <details className="builder cov-panel">
+          <summary>Kapsam · {s.total} gereksinim · {sevCount.M} zorunlu (M) / {sevCount.R} önerilen (R) / {sevCount.C} koşullu (C) · {specRows.length} spec kaynağı</summary>
+          <p className="muted small">Bu denetimin dayandığı otoriter kaynaklar — her verdikt izlenebilir (rakiplerin kapalı kurallarının aksine):</p>
+          <table className="capk-table image-tags comp-table">
+            <thead><tr><th>Spec kaynağı</th><th className="c">Kural</th></tr></thead>
+            <tbody>
+              {specRows.map(([spec, n]) => (
+                <tr key={spec}><td className="small">{spec}</td><td className="c b">{n}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
         {c.categories.map((cat) => {
           const rules = filter === 'all' ? cat.rules : cat.rules.filter((r) => r.status === filter);
           if (!rules.length) return null;

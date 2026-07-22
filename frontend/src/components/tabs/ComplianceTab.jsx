@@ -25,7 +25,7 @@ const VERDICT = {
 function reportHtml(res) {
   const c = res.compliance; const esc = (s) => String(s ?? '').replace(/[&<>]/g, (x) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[x]));
   const rows = c.categories.map((cat) => `<tr class="cat"><td colspan="5">${esc(cat.name)}</td></tr>` +
-    cat.rules.map((r) => `<tr class="s-${r.status}"><td>${STATUS[r.status].icon}</td><td class="mono">${esc(r.id)}</td><td>${SEV[r.sev]}</td><td>${esc(r.req)}</td><td class="mono">${esc(r.evidence || r.detail || '')}</td></tr>`).join('')).join('');
+    cat.rules.map((r) => `<tr class="s-${r.status}"><td>${STATUS[r.status].icon}</td><td class="mono">${esc(r.id)}</td><td>${SEV[r.sev]}</td><td>${esc(r.req)}${r.spec ? `<div class="spec">${esc(r.spec)}</div>` : ''}</td><td class="mono">${esc(r.evidence || r.detail || '')}</td></tr>`).join('')).join('');
   // Appendix: per-record TLV tree (every EMV tag in each record, nested) so the
   // certification report shows the raw perso structure the rules were run on.
   const recsTlv = (res.image?.applications || []).flatMap((a) => (a.records || []).filter((r) => r.nodes?.length).map((r) =>
@@ -38,6 +38,7 @@ function reportHtml(res) {
 table{border-collapse:collapse;width:100%;margin-top:12px}th,td{border:1px solid #ddd;padding:5px 8px;text-align:left;vertical-align:top}th{background:#f4f5f7;font-size:11px;text-transform:uppercase}
 tr.cat td{background:#eef1f5;font-weight:700}.mono{font-family:ui-monospace,Consolas,monospace}
 tr.s-fail td{background:#fdecee}tr.s-warn td{background:#fdf6e3}tr.s-na td{color:#999}
+.spec{color:#8a8f98;font-size:10px;margin-top:2px;font-style:italic}
 h2{font-size:15px;margin:22px 0 6px;border-bottom:1px solid #ddd;padding-bottom:4px}
 ${TLV_CSS}
 @media print{tr{page-break-inside:avoid}.te{break-inside:avoid}}</style></head><body>
@@ -168,7 +169,7 @@ function ComplianceResult({ res, label, busy, onRun, clear, present }) {
                       <td className={`c ${STATUS[r.status].cls}`} title={STATUS[r.status].label}>{STATUS[r.status].icon}</td>
                       <td className="mono b">{r.id}</td>
                       <td className="small muted" title={SEV[r.sev]}>{r.sev}</td>
-                      <td className="small">{r.req}</td>
+                      <td className="small">{r.req}{r.spec && <span className="rule-spec">{r.spec}</span>}</td>
                       <td className="mono small val">{r.evidence || <span className="muted">{r.detail || '—'}</span>}{r.evidence && r.detail ? <span className="muted"> · {r.detail}</span> : null}</td>
                     </tr>
                   ))}

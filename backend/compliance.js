@@ -55,7 +55,25 @@ const FAIL = (evidence, detail) => ({ status: 'fail', evidence, detail });
 const WARN = (evidence, detail) => ({ status: 'warn', evidence, detail });
 const NA = (detail) => ({ status: 'na', detail });
 
-// A rule: { id, cat, req, sev(M/R/C), scheme?, iface?, run(ctx) -> {status,...} }
+// Spec izlenebilirliği: her kuralın hangi otoriter belgeye dayandığı. Kategori
+// başına varsayılan; bir kural kendi `spec` alanıyla override edebilir. Amaç:
+// rakip araçların kapalı-kutu kurallarının aksine her verdikt kaynağa izlenebilir.
+// (Bk = EMV Book: Bk1 ICC-Terminal, Bk2 Security, Bk3 App Spec, Bk4 Terminal.)
+const CAT_SPEC = {
+  'Yapı': 'EMV Bk3 · Data Elements (Ann. A)',
+  'AFL/Kayıt': 'EMV Bk3 · §10.2 (AFL/READ RECORD)',
+  'ODA': 'EMV Bk2 · §5-7 (Offline Data Auth)',
+  'CVM': 'EMV Bk3 · §10.5 (CVM List 8E)',
+  'Kullanım/Yerel': 'EMV Bk3 · Ann. A (AUC/yerel)',
+  'DOL/FCI': 'EMV Bk1 §11.3 (FCI) · Bk3 §5.4 (DOL)',
+  'Mastercard CPV': 'M/Chip Requirements · CPV',
+  'Visa VIS/qVSDC': 'Visa VIS 1.6 · VCPS 2.x (qVSDC)',
+  'Amex': 'Amex AEIPS 3.x',
+  'Troy D-PAS': 'Troy D-PAS',
+  'ODA Kripto': 'EMV Bk2 · §6 (RSA/SDAD)',
+};
+
+// A rule: { id, cat, req, sev(M/R/C), scheme?, iface?, spec?, run(ctx) -> {status,...} }
 const RULES = [
   // ── Yapı / zorunlu alanlar ─────────────────────────────────────────────
   { id: 'STR-01', cat: 'Yapı', sev: 'M', req: 'Uygulama PAN mevcut (Track2 57 veya 5A)',
@@ -134,15 +152,20 @@ const RULES = [
   { id: 'MC-05', cat: 'Mastercard CPV', sev: 'R', scheme: 'Mastercard', req: 'M/Chip: Track1 Discretionary (9F1F) veya CVC3 (temassız) veri alanları',
     run: (c) => { const cl = c.iface === 'contactless'; if (cl) { const has = c.has('9F60') || c.has('9F61') || c.has('9F62') || c.has('9F63'); return has ? PASS('CVC3/Track verileri') : WARN('—', 'PayPass temassız veri alanları görülmedi'); } return c.has('9F1F') ? PASS(c.val('9F1F').slice(0, 20) + '…') : WARN('—', 'Track1 Discretionary önerilir'); } },
 
-  // ── Visa VPA (şema-özel) ───────────────────────────────────────────────
-  { id: 'VZ-01', cat: 'Visa VPA', sev: 'M', scheme: 'Visa', req: 'Application Version Number (9F08) mevcut',
+  // ── Visa VIS / qVSDC (şema-özel) ───────────────────────────────────────
+  { id: 'VZ-01', cat: 'Visa VIS/qVSDC', sev: 'M', scheme: 'Visa', req: 'Application Version Number (9F08) mevcut',
     run: (c) => c.has('9F08') ? PASS(c.val('9F08')) : FAIL('—') },
-  { id: 'VZ-02', cat: 'Visa VPA', sev: 'M', scheme: 'Visa', req: 'Issuer Application Data (9F10, VIS formatı) mevcut',
+  { id: 'VZ-02', cat: 'Visa VIS/qVSDC', sev: 'M', scheme: 'Visa', req: 'Issuer Application Data (9F10, VIS formatı) mevcut',
     run: (c) => { const v = c.val('9F10') || c.genac?.iad; return v ? PASS(v + (c.has('9F10') ? '' : ' (GENERATE AC)')) : (c.hasCrypto ? FAIL('—', 'IAD yok') : WARN('—', 'Kripto akışı çalışmadı')); } },
-  { id: 'VZ-03', cat: 'Visa VPA', sev: 'R', scheme: 'Visa', req: 'IAC alanları (9F0D/0E/0F) mevcut',
+  { id: 'VZ-03', cat: 'Visa VIS/qVSDC', sev: 'R', scheme: 'Visa', req: 'IAC alanları (9F0D/0E/0F) mevcut',
     run: (c) => { const iac = ['9F0D', '9F0E', '9F0F'].filter((t) => c.has(t)); return iac.length === 3 ? PASS('IAC Default/Denial/Online') : WARN(`var: ${iac.join(',') || 'yok'}`); } },
-  { id: 'VZ-04', cat: 'Visa VPA', sev: 'C', scheme: 'Visa', req: 'Temassız: Card Transaction Qualifiers (9F6C) veya Form Factor (9F6E)',
+  { id: 'VZ-04', cat: 'Visa VIS/qVSDC', sev: 'C', scheme: 'Visa', req: 'Temassız: Card Transaction Qualifiers (9F6C) veya Form Factor (9F6E)',
     run: (c) => { if (c.iface !== 'contactless') return NA('Sadece temassız'); return (c.has('9F6C') || c.has('9F6E')) ? PASS(c.has('9F6C') ? `CTQ ${c.val('9F6C')}` : `FFI ${c.val('9F6E')}`) : WARN('—', 'qVSDC temassız alanları görülmedi'); } },
+  { id: 'VZ-05', cat: 'Visa VIS/qVSDC', sev: 'M', scheme: 'Visa', req: 'IAD (9F10) VIS formatı — Cryptogram Version (CVN) + DKI çıkarılabiliyor',
+    run: (c) => { const v = c.val('9F10') || c.genac?.iad; if (!v) return c.hasCrypto ? FAIL('—', 'IAD yok') : NA('IAD yok'); if (v.length < 6) return FAIL(v, 'IAD çok kısa (VIS ≥ 3 bayt)'); return PASS(`CVN=${v.slice(4, 6)} · DKI=${v.slice(2, 4)}`); } },
+  { id: 'VZ-06', cat: 'Visa VIS/qVSDC', sev: 'C', scheme: 'Visa', iface: 'contactless', spec: 'VCPS 2.x (qVSDC) · PDOL/TTQ',
+    req: 'qVSDC: PDOL (9F38) Terminal Transaction Qualifiers (9F66) ister',
+    run: (c) => { const v = c.val('9F38'); if (!v) return WARN('—', 'PDOL yok — qVSDC PDOL bekler'); const d = validDol(v); if (!d.ok) return FAIL(v.slice(0, 20), 'Geçersiz PDOL'); return d.tags.includes('9F66') ? PASS('PDOL 9F66 (TTQ) içeriyor') : WARN(`${d.entries.length} tag`, 'PDOL 9F66 (TTQ) istemiyor — qVSDC için beklenir'); } },
 
   // ── Amex (AEIPS, şema-özel) ────────────────────────────────────────────
   { id: 'AX-01', cat: 'Amex', sev: 'M', scheme: 'Amex', req: 'Application Version Number (9F08) mevcut',
@@ -188,7 +211,7 @@ export function runCompliance(image, iface, crypto) {
     if (rule.iface && iface && rule.iface !== iface) continue;   // farklı arayüz — atla
     let r;
     try { r = rule.run(ctx); } catch (e) { r = FAIL('—', 'Kural hatası: ' + e.message); }
-    results.push({ id: rule.id, cat: rule.cat, req: rule.req, sev: rule.sev, ...r, evidence: r.evidence ?? null, detail: r.detail ?? null });
+    results.push({ id: rule.id, cat: rule.cat, req: rule.req, sev: rule.sev, spec: rule.spec || CAT_SPEC[rule.cat] || null, ...r, evidence: r.evidence ?? null, detail: r.detail ?? null });
   }
   // Group by category (stable order of first appearance).
   const cats = [];

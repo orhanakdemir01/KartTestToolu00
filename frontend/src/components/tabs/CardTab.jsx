@@ -33,7 +33,6 @@ export function CardTab({
           <div className="emv-result">
             <div className="emv-card">
               <div className="emv-top">
-                <span className="emv-contactless" title="Temassız okuma">))) </span>
                 <span className="emv-brand">{emv.cardData.scheme || emv.applications?.[0]?.label || 'EMV'}</span>
               </div>
               <div className="emv-pan mono">{emv.cardData.panFormatted}</div>

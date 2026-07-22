@@ -309,8 +309,7 @@ a:hover { color: #1a9850; text-decoration: underline; }
   height: 200px; display: flex; flex-direction: column; justify-content: space-between;
   box-shadow: 0 12px 28px rgba(20,28,56,0.26);
 }
-.emv-top { display: flex; justify-content: space-between; align-items: center; }
-.emv-contactless { font-size: 18px; color: #cfd8f0; transform: rotate(90deg); display: inline-block; }
+.emv-top { display: flex; justify-content: flex-end; align-items: center; }
 .emv-brand { font-size: 14px; font-weight: 800; color: #fff; text-align: right; letter-spacing: 0.4px; }
 .luhn-ok { color: #6ee7a0; font-size: 13px; }
 .luhn-bad { color: #f7a8a8; font-size: 13px; }

@@ -16,6 +16,8 @@ import { ProfilePdfTab } from './components/tabs/ProfilePdfTab.jsx';
 import { ReportTab } from './components/tabs/ReportTab.jsx';
 import { SessionTab } from './components/tabs/SessionTab.jsx';
 import { HistoryTab } from './components/tabs/HistoryTab.jsx';
+import { BatchTab } from './components/tabs/BatchTab.jsx';
+import { buildBatchReportHtml } from './lib/batchreport.js';
 import { TraceDock } from './components/TraceDock.jsx';
 
 const API = 'http://localhost:3001/api';
@@ -87,6 +89,7 @@ const TAB_GROUPS = [
     { id: 'report', label: 'Rapor', icon: '📊', desc: 'Oturum raporu (HTML / yazdır)' },
     { id: 'session', label: 'Oturum', icon: '💾', desc: 'Test oturumunu kaydet / yükle / devam et' },
     { id: 'history', label: 'Geçmiş', icon: '📈', desc: 'Kart bazlı denetim geçmişi + regresyon trendi' },
+    { id: 'batch', label: 'Parti', icon: '🗃', desc: 'Çoklu-kart perso QA — sırayla işle, birleşik rapor' },
   ] },
 ];
 
@@ -162,6 +165,8 @@ function App() {
   const [sessions, setSessions] = useState([]);           // kayıtlı test oturumları listesi
   const [sessionBusy, setSessionBusy] = useState('');     // '' | 'save' | dosya adı (yükleniyor)
   const [historyCards, setHistoryCards] = useState([]);   // geçmişi olan kartlar (Geçmiş sekmesi)
+  const [batch, setBatch] = useState([]);                 // parti: sırayla işlenen kartların özet satırları
+  const [batchBusy, setBatchBusy] = useState(false);
   const [conn, setConn] = useState('idle');
   const traceRef = useRef(null);
 
@@ -952,6 +957,45 @@ ${apps}
     setCampaignBusy('');
   };
 
+  // ── Parti / batch: çoklu-kart perso QA ──
+  // Kart image'ından ham PAN (geçmiş/parti için) — 5A varsa ondan, yoksa Track2.
+  const panFromImage = (image) => {
+    const tags = image?.applications?.[0]?.tags || [];
+    const gv = (t) => tags.find((g) => g.tag === t)?.value;
+    const p5a = gv('5A'); if (p5a) return p5a.replace(/\s/g, '').replace(/[Ff]+$/, '');
+    const t2 = gv('57'); if (t2) { const s = t2.replace(/\s/g, '').toUpperCase(); const d = s.indexOf('D'); if (d > 0) return s.slice(0, d); }
+    return null;
+  };
+  const processBatchCard = async (iface) => {
+    const reader = readers.find((r) => iface === 'contactless' ? /contactless/i.test(r) : !/contactless/i.test(r));
+    const name = iface === 'contactless' ? 'Temassız' : 'Temaslı';
+    if (!reader) { addTrace({ kind: 'error', msg: `${name} okuyucu yok` }); return; }
+    setBatchBusy(true);
+    addTrace({ kind: 'event', msg: `═══ Parti · kart işleniyor (${name}) ═══` });
+    try {
+      const r = await fetch(`${API}/compliance`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reader, terminal: terminalProfile }) });
+      const d = await r.json();
+      if (d.error) { addTrace({ kind: 'error', msg: `Parti: ${d.error}` }); setBatchBusy(false); return; }
+      const c = d.compliance, s = c.summary;
+      const row = {
+        pan: maskPan(panFromImage(d.image)) || '—', scheme: c.scheme || '?', iface: name,
+        verdict: s.verdict, pass: s.pass, fail: s.fail, warn: s.warn, na: s.na, total: s.total,
+        regressed: c.regression?.regressed?.length || 0, first: !!c.regression?.first, time: now(),
+      };
+      setBatch((p) => [...p, row]);
+      addTrace({ kind: row.verdict === 'FAIL' ? 'error' : 'ok', msg: `Parti +1: ${row.scheme} ${row.pan} → ${row.verdict}` });
+    } catch { addTrace({ kind: 'error', msg: 'Parti: bağlantı hatası' }); }
+    setBatchBusy(false);
+  };
+  const removeBatchRow = (i) => setBatch((p) => p.filter((_, idx) => idx !== i));
+  const clearBatch = () => setBatch([]);
+  const downloadBatchReport = () => {
+    if (!batch.length) return;
+    const url = URL.createObjectURL(new Blob([buildBatchReportHtml(batch, reportMeta)], { type: 'text/html' }));
+    const a = document.createElement('a'); a.href = url; a.download = `karttest-parti-${Date.now()}.html`; a.click(); URL.revokeObjectURL(url);
+    addTrace({ kind: 'event', msg: `Parti raporu indirildi (${batch.length} kart)` });
+  };
+
   // ── Report / export ──
   const reportCtx = () => ({
     meta: reportMeta,
@@ -1216,6 +1260,12 @@ ${apps}
       {activeTab === 'history' && (
         <HistoryTab cards={historyCards} refresh={loadHistoryCards}
           getCardRuns={getCardRuns} clearCardHistory={clearCardHistory} />
+      )}
+
+      {activeTab === 'batch' && (
+        <BatchTab batch={batch} batchBusy={batchBusy} processBatchCard={processBatchCard}
+          removeBatchRow={removeBatchRow} clearBatch={clearBatch} downloadBatchReport={downloadBatchReport}
+          contactPresent={ifaceHasCard('contact')} contactlessPresent={ifaceHasCard('contactless')} />
       )}
 
           <TraceDock trace={trace} traceOpen={traceOpen} setTraceOpen={setTraceOpen}

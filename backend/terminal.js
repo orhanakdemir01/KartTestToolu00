@@ -54,14 +54,26 @@ export const TERMINAL_FIELDS = [
 // Scenario presets — a named terminal-profile override plus the card cryptogram
 // decision expected (TC=offline approve, ARQC=online, AAC=decline). Used by the
 // Terminal Profili quick-picks and the scenario runner.
+// expect: beklenen kart kararı (TC/ARQC/AAC) VEYA 'observe' = kart-bağımlı, sonuç
+// gözlemlenir (pass/fail yok). cat: L2/L3 senaryo grubu.
 export const TERMINAL_PRESETS = [
-  { id: 'default', name: 'Varsayılan (online, 10.00)', req: 'ARQC', expect: 'ARQC', over: {} },
-  { id: 'offline-low', name: 'Offline onay talebi (1.00)', req: 'TC', expect: 'TC', over: { '9F02': '000000000100', '9F66': '36000000', '9F33': 'E0F0C8' } },
-  { id: 'online-high', name: 'Online talebi (5000.00)', req: 'ARQC', expect: 'ARQC', over: { '9F02': '000000500000', '9F66': '37000000' } },
-  { id: 'cash', name: 'Nakit çekim (cash advance)', req: 'ARQC', expect: 'ARQC', over: { '9C': '01', '9F02': '000000010000' } },
-  { id: 'decline', name: 'Red talebi (AAC)', req: 'AAC', expect: 'AAC', over: { '9F02': '000000002000' } },
-  { id: 'usd', name: 'Yabancı para (USD, online)', req: 'ARQC', expect: 'ARQC', over: { '5F2A': '0840', '9F1A': '0840' } },
-  { id: 'offline-only', name: 'Offline-only terminal (TC)', req: 'TC', expect: 'TC', over: { '9F66': '20000000', '9F33': '206000', '9F02': '000000000100' } },
+  // ── Temel sonuç: online / offline / red ──
+  { id: 'default', cat: 'Temel sonuç', name: 'Varsayılan (online, 10.00)', req: 'ARQC', expect: 'ARQC', over: {} },
+  { id: 'online-high', cat: 'Temel sonuç', name: 'Online talebi (5000.00)', req: 'ARQC', expect: 'ARQC', over: { '9F02': '000000500000', '9F66': '37000000' } },
+  { id: 'offline-low', cat: 'Temel sonuç', name: 'Offline onay talebi (1.00)', req: 'TC', expect: 'TC', over: { '9F02': '000000000100', '9F66': '36000000', '9F33': 'E0F0C8' } },
+  { id: 'offline-only', cat: 'Temel sonuç', name: 'Offline-only terminal (TC)', req: 'TC', expect: 'TC', over: { '9F66': '20000000', '9F33': '206000', '9F02': '000000000100' } },
+  { id: 'decline', cat: 'Temel sonuç', name: 'Red talebi (AAC)', req: 'AAC', expect: 'AAC', over: { '9F02': '000000002000' } },
+  // ── İşlem tipi (9C) ──
+  { id: 'cash', cat: 'İşlem tipi', name: 'Nakit çekim (cash advance)', req: 'ARQC', expect: 'ARQC', over: { '9C': '01', '9F02': '000000010000' } },
+  { id: 'cashback', cat: 'İşlem tipi', name: 'Alışveriş + nakit (cashback)', req: 'ARQC', expect: 'ARQC', over: { '9C': '09', '9F02': '000000005000', '9F03': '000000002000' } },
+  { id: 'refund', cat: 'İşlem tipi', name: 'İade (refund)', req: 'ARQC', expect: 'observe', over: { '9C': '20', '9F02': '000000003000' } },
+  // ── Para birimi (5F2A / 9F1A) ──
+  { id: 'usd', cat: 'Para birimi', name: 'USD (yabancı, online)', req: 'ARQC', expect: 'ARQC', over: { '5F2A': '0840', '9F1A': '0840' } },
+  { id: 'eur', cat: 'Para birimi', name: 'EUR (yabancı, online)', req: 'ARQC', expect: 'ARQC', over: { '5F2A': '0978', '9F1A': '0978' } },
+  { id: 'gbp', cat: 'Para birimi', name: 'GBP (yabancı)', req: 'ARQC', expect: 'observe', over: { '5F2A': '0826', '9F1A': '0826' } },
+  // ── Sınır / risk ──
+  { id: 'zero', cat: 'Sınır / risk', name: 'Sıfır tutar', req: 'ARQC', expect: 'observe', over: { '9F02': '000000000000' } },
+  { id: 'very-high', cat: 'Sınır / risk', name: 'Çok yüksek tutar (50.000)', req: 'ARQC', expect: 'ARQC', over: { '9F02': '005000000000' } },
 ];
 
 // Known scheme AIDs tried directly when PPSE/PSE list no applications.

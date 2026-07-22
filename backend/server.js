@@ -207,10 +207,10 @@ app.post('/api/scenario/run', async (req, res) => {
     try {
       const emv = await runEmvFlow(preferReader, { ...req.body, terminal: p.over, requestAc: p.req });
       const g = emv?.genac || {};
-      results.push({ id: p.id, name: p.name, expect: p.expect, decision: g.decision || null,
+      results.push({ id: p.id, name: p.name, cat: p.cat || null, expect: p.expect, decision: g.decision || null,
         cid: g.cid || null, ac: g.arqc || null, amount: p.over['9F02'] || null, error: emv?.error || null,
-        match: g.decision != null && g.decision === p.expect });
-    } catch (e) { results.push({ id: p.id, name: p.name, expect: p.expect, error: e.message }); }
+        match: p.expect === 'observe' ? null : (g.decision != null && g.decision === p.expect) });
+    } catch (e) { results.push({ id: p.id, name: p.name, cat: p.cat || null, expect: p.expect, error: e.message }); }
   }
   res.json({ results });
 });

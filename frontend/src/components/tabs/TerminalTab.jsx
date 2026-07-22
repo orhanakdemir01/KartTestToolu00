@@ -3,6 +3,8 @@
 // PDOL/CDOL, and run scenario presets that request different cryptogram types
 // (TC/ARQC/AAC) to observe the card's actual decision — L2/L3-style testing.
 
+import { Fragment } from 'react';
+
 const DEC = { TC: { cls: 'st-ok', label: 'offline onay' }, ARQC: { cls: 'st-warn', label: 'online' }, AAC: { cls: 'st-bad', label: 'red' } };
 
 export function TerminalTab({ meta, profile, setProfile, runScenarios, scenarioBusy, scenarioResult, cardPresent }) {
@@ -62,25 +64,33 @@ export function TerminalTab({ meta, profile, setProfile, runScenarios, scenarioB
 
         {scenarioResult?.error && <p className="err-text" style={{ marginTop: 10 }}>✗ {scenarioResult.error}</p>}
         {scenarioResult?.results && (
-          <table className="capk-table image-tags" style={{ marginTop: 12 }}>
-            <thead><tr><th></th><th>Senaryo</th><th>İstenen</th><th>Kart Kararı</th><th>Cryptogram (AC)</th></tr></thead>
+          <table className="capk-table image-tags comp-table" style={{ marginTop: 12 }}>
+            <thead><tr><th></th><th>Senaryo</th><th>Beklenen</th><th>Kart Kararı</th><th>Cryptogram (AC)</th></tr></thead>
             <tbody>
-              {scenarioResult.results.map((s) => {
-                const d = s.decision && DEC[s.decision];
-                return (
-                  <tr key={s.id}>
-                    <td className={s.error ? 'st-bad' : s.match ? 'st-ok' : 'st-warn'} title={s.match ? 'beklenenle aynı' : 'kart farklı karar verdi'}>{s.error ? '✗' : s.match ? '✓' : '≠'}</td>
-                    <td className="small">{s.name}</td>
-                    <td className="mono small">{s.expect}</td>
-                    <td className="mono small">{s.error ? <span className="err-text">HATA</span> : s.decision ? <span className={d?.cls}>{s.decision} <span className="muted">· {d?.label}</span></span> : <span className="muted">—</span>}</td>
-                    <td className="mono small val">{s.ac || (s.error ? s.error : <span className="muted">—</span>)}</td>
-                  </tr>
-                );
-              })}
+              {[...new Set(scenarioResult.results.map((s) => s.cat || 'Diğer'))].map((cat) => (
+                <Fragment key={cat}>
+                  <tr className="cat"><td colSpan={5} className="comp-cat-head">{cat}</td></tr>
+                  {scenarioResult.results.filter((s) => (s.cat || 'Diğer') === cat).map((s) => {
+                    const d = s.decision && DEC[s.decision];
+                    const mCls = s.error ? 'st-bad' : s.match === null ? 'st-extra' : s.match ? 'st-ok' : 'st-warn';
+                    const mIcon = s.error ? '✗' : s.match === null ? '◈' : s.match ? '✓' : '≠';
+                    const mTitle = s.error ? 'hata' : s.match === null ? 'gözlem (kart-bağımlı)' : s.match ? 'beklenenle aynı' : 'kart farklı karar verdi';
+                    return (
+                      <tr key={s.id}>
+                        <td className={`c ${mCls}`} title={mTitle}>{mIcon}</td>
+                        <td className="small">{s.name}</td>
+                        <td className="mono small">{s.expect === 'observe' ? <span className="muted">gözlem</span> : s.expect}</td>
+                        <td className="mono small">{s.error ? <span className="err-text">HATA</span> : s.decision ? <span className={d?.cls}>{s.decision} <span className="muted">· {d?.label}</span></span> : <span className="muted">—</span>}</td>
+                        <td className="mono small val">{s.ac || (s.error ? s.error : <span className="muted">—</span>)}</td>
+                      </tr>
+                    );
+                  })}
+                </Fragment>
+              ))}
             </tbody>
           </table>
         )}
-        <p className="muted small" style={{ marginTop: 6 }}>≠ = kart, terminalin istediğinden farklı karar verdi (örn. offline onay istenip online'a zorlanması) — kartın gerçek risk davranışıdır, hata değil.</p>
+        <p className="muted small" style={{ marginTop: 6 }}>✓ beklenenle aynı · ≠ kart farklı karar verdi (gerçek risk davranışı, hata değil) · ◈ gözlem (kart-bağımlı sonuç, pass/fail yok).</p>
       </div>
     </section>
   );

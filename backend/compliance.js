@@ -66,6 +66,7 @@ const CAT_SPEC = {
   'CVM': 'EMV Bk3 · §10.5 (CVM List 8E)',
   'Kullanım/Yerel': 'EMV Bk3 · Ann. A (AUC/yerel)',
   'DOL/FCI': 'EMV Bk1 §11.3 (FCI) · Bk3 §5.4 (DOL)',
+  'Tutarlılık': 'EMV Bk3 · Çapraz-alan tutarlılık',
   'Mastercard CPV': 'M/Chip Requirements · CPV',
   'Visa VIS/qVSDC': 'Visa VIS 1.6 · VCPS 2.x (qVSDC)',
   'Amex': 'Amex AEIPS 3.x',
@@ -148,6 +149,14 @@ const RULES = [
     run: (c) => { const v = c.val('9F38'); if (!v) return NA('9F38 yok'); const d = validDol(v); return d.ok ? PASS(`${d.entries.length} tag`) : FAIL(v.slice(0, 20), 'Geçersiz DOL: ' + d.reason); } },
   { id: 'IAD-01', cat: 'DOL/FCI', sev: 'R', req: 'Issuer Application Data (9F10) makul uzunlukta (≥ 7 bayt)',
     run: (c) => { const v = c.val('9F10') || c.genac?.iad; if (!v) return NA('9F10 yok'); const n = v.length / 2; return n >= 7 ? PASS(`${n} bayt`) : WARN(`${n} bayt`, 'IAD kısa görünüyor'); } },
+
+  // ── Çapraz-alan tutarlılık (sadece "var mı" değil, alanlar birbiriyle uyumlu mu) ──
+  { id: 'CON-01', cat: 'Tutarlılık', sev: 'M', req: 'AIP "CV desteklenir" (byte1 bit5) ↔ CVM List (8E) mevcut',
+    run: (c) => { if (!c.aip) return NA('AIP yok'); if (!(c.aipB1 & 0x10)) return NA('AIP CV bildirmez'); return c.has('8E') ? PASS('AIP CV ↔ 8E ✓') : FAIL('—', 'AIP CV destekliyor ama CVM List (8E) yok'); } },
+  { id: 'CON-02', cat: 'Tutarlılık', sev: 'R', spec: 'ISO/IEC 7813 · Service Code', req: 'Track2 (57) hizmet kodu 1. hanesi chip kartı gösterir (2 veya 6)',
+    run: (c) => { const t2 = c.val('57'); if (!t2) return NA('Track2 yok'); const sc = parseTrack2(t2)?.serviceCode; if (!sc) return NA('Hizmet kodu yok'); return (sc[0] === '2' || sc[0] === '6') ? PASS(`SC=${sc} (IC kart)`) : WARN(`SC=${sc}`, '1. hane 2/6 değil — chip göstermiyor'); } },
+  { id: 'CON-03', cat: 'Tutarlılık', sev: 'C', spec: 'EMV Bk3 · 57 ↔ 5F24', req: 'Track2 (57) son kullanma ile tag 5F24 (YYMM) tutarlı',
+    run: (c) => { const t2 = c.val('57'), exp = c.val('5F24'); if (!t2 || !exp) return NA('İki alan birden yok'); const sep = t2.indexOf('D'); if (sep < 0) return NA('Track2 format'); const t2yymm = t2.slice(sep + 1).slice(0, 4); const e = exp.slice(0, 4); return t2yymm === e ? PASS(`YYMM=${e} ✓`) : FAIL(`57=${t2yymm} 5F24=${e}`, 'Son kullanma uyuşmuyor'); } },
 
   // ── Mastercard CPV (şema-özel) ─────────────────────────────────────────
   { id: 'MC-01', cat: 'Mastercard CPV', sev: 'M', scheme: 'Mastercard', req: 'Application Version Number (9F08) mevcut',

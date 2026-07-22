@@ -38,7 +38,7 @@ export function CardTab({
               <div className="emv-pan mono">{emv.cardData.panFormatted}</div>
               <div className="emv-bottom">
                 <div><span className="emv-lbl">KART SAHİBİ</span><span>{emv.cardData.cardholderName || '—'}</span></div>
-                <div><span className="emv-lbl">GEÇERLİLİK</span><span className="mono">{emv.cardData.expiry || '—'}</span></div>
+                <div><span className="emv-lbl">SKT</span><span className="mono">{emv.cardData.expiry || '—'}</span></div>
                 <div><span className="emv-lbl">LUHN</span><span className={emv.cardData.luhnValid ? 'luhn-ok' : 'luhn-bad'}>{emv.cardData.luhnValid ? '✓ Geçerli' : '✗ Hatalı'}</span></div>
               </div>
             </div>

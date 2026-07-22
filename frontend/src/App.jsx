@@ -15,6 +15,7 @@ import { TerminalTab } from './components/tabs/TerminalTab.jsx';
 import { ProfilePdfTab } from './components/tabs/ProfilePdfTab.jsx';
 import { ReportTab } from './components/tabs/ReportTab.jsx';
 import { SessionTab } from './components/tabs/SessionTab.jsx';
+import { HistoryTab } from './components/tabs/HistoryTab.jsx';
 import { TraceDock } from './components/TraceDock.jsx';
 
 const API = 'http://localhost:3001/api';
@@ -85,6 +86,7 @@ const TAB_GROUPS = [
   { id: 'output', label: 'Sonuç & Yapılandırma', icon: '📄', tabs: [
     { id: 'report', label: 'Rapor', icon: '📊', desc: 'Oturum raporu (HTML / yazdır)' },
     { id: 'session', label: 'Oturum', icon: '💾', desc: 'Test oturumunu kaydet / yükle / devam et' },
+    { id: 'history', label: 'Geçmiş', icon: '📈', desc: 'Kart bazlı denetim geçmişi + regresyon trendi' },
   ] },
 ];
 
@@ -159,6 +161,7 @@ function App() {
   const [campaignBusy, setCampaignBusy] = useState('');   // '' | 'contact' | 'contactless'
   const [sessions, setSessions] = useState([]);           // kayıtlı test oturumları listesi
   const [sessionBusy, setSessionBusy] = useState('');     // '' | 'save' | dosya adı (yükleniyor)
+  const [historyCards, setHistoryCards] = useState([]);   // geçmişi olan kartlar (Geçmiş sekmesi)
   const [conn, setConn] = useState('idle');
   const traceRef = useRef(null);
 
@@ -237,6 +240,16 @@ function App() {
   };
   const deleteSessionFile = async (file) => {
     try { await fetch(`${API}/session/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file }) }); await loadSessionsList(); } catch { /* */ }
+  };
+  // ── Uyumluluk geçmişi (Geçmiş sekmesi) ──
+  const loadHistoryCards = async () => {
+    try { const r = await fetch(`${API}/history`); const d = await r.json(); setHistoryCards(d.cards || []); } catch { /* backend yok */ }
+  };
+  const getCardRuns = async (key) => {
+    try { const r = await fetch(`${API}/history/card`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pan: key }) }); const d = await r.json(); return d.runs || []; } catch { return []; }
+  };
+  const clearCardHistory = async (key) => {
+    try { await fetch(`${API}/history/clear`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pan: key }) }); await loadHistoryCards(); } catch { /* */ }
   };
   // Kaydedilmiş bir oturumun state'ini uygulamadan yalnızca döndürür (karşılaştırma için).
   const getSnapshotState = async (file) => {
@@ -322,6 +335,7 @@ function App() {
   };
   useEffect(() => { loadSessionKeys(); }, []);
   useEffect(() => { loadSessionsList(); }, []);
+  useEffect(() => { loadHistoryCards(); }, []);
 
   // ── Send APDU ──
   const send = async (cmdArg) => {
@@ -1197,6 +1211,11 @@ ${apps}
         <SessionTab sessions={sessions} sessionBusy={sessionBusy}
           saveSessionAs={saveSessionAs} loadSessionFile={loadSessionFile} deleteSessionFile={deleteSessionFile}
           refresh={loadSessionsList} snapshot={buildSnapshot()} getSnapshotState={getSnapshotState} />
+      )}
+
+      {activeTab === 'history' && (
+        <HistoryTab cards={historyCards} refresh={loadHistoryCards}
+          getCardRuns={getCardRuns} clearCardHistory={clearCardHistory} />
       )}
 
           <TraceDock trace={trace} traceOpen={traceOpen} setTraceOpen={setTraceOpen}

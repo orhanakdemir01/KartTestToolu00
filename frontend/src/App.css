@@ -83,6 +83,17 @@ a:hover { color: #1a9850; text-decoration: underline; }
 /* Arayüz-bazlı "yuvada kart yok" ipucu (Denetle/Doğrula pasifken) */
 .iface-nocard { font-size: 12px; font-weight: 600; color: #a3aab0; white-space: nowrap; }
 
+/* Geçmiş — zaman çizelgesi */
+.hist-timeline { display: flex; flex-direction: column; gap: 8px; border-left: 2px solid #e6eae8; padding-left: 14px; }
+.hist-run { display: flex; flex-direction: column; gap: 4px; position: relative; }
+.hist-run::before { content: ''; position: absolute; left: -21px; top: 5px; width: 9px; height: 9px; border-radius: 50%; background: #c3e6d1; border: 2px solid #fff; }
+.hist-run-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.hist-badge { font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 7px; border: 1px solid; }
+.hist-badge.v-pass { background: #e9f6ee; color: #157a43; border-color: #c3e6d1; }
+.hist-badge.v-warn { background: #fdf4e3; color: #b45309; border-color: #f2ddb0; }
+.hist-badge.v-fail { background: #fdecea; color: #c0392b; border-color: #f0cdc8; }
+.hist-diff { font-size: 12px; display: flex; gap: 14px; flex-wrap: wrap; }
+
 /* Uyumluluk regresyon / geçmiş */
 .regr { display: flex; flex-direction: column; gap: 7px; margin: 0 0 12px; }
 .regr-line { font-size: 12.5px; font-weight: 600; }

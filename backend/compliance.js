@@ -103,6 +103,8 @@ const RULES = [
     run: (c) => { if (!c.afl) return FAIL('—'); return c.afl.length % 8 === 0 ? PASS(`${c.afl.length / 8} girdi`) : FAIL(c.afl, '4 baytın katı değil'); } },
   { id: 'AFL-02', cat: 'AFL/Kayıt', sev: 'M', req: "AFL'nin işaret ettiği tüm kayıtlar okundu",
     run: (c) => { if (!c.afl) return NA('AFL yok'); const entries = parseAfl(c.afl); let need = 0; for (const e of entries) need += (e.lastRecord - e.firstRecord + 1); const got = c.records.length; return got >= need ? PASS(`${got}/${need} kayıt`) : FAIL(`${got}/${need}`, 'Eksik kayıt'); } },
+  { id: 'AFL-03', cat: 'AFL/Kayıt', sev: 'M', req: 'AFL girdileri geçerli (SFI 1-30, 1 ≤ ilk ≤ son kayıt)',
+    run: (c) => { if (!c.afl) return NA('AFL yok'); const es = parseAfl(c.afl); if (!es.length) return FAIL(c.afl, 'AFL çözümlenemedi'); const bad = es.filter((e) => e.sfi < 1 || e.sfi > 30 || e.firstRecord < 1 || e.firstRecord > e.lastRecord); return bad.length ? FAIL(bad.map((e) => `SFI${e.sfi} ${e.firstRecord}-${e.lastRecord}`).join(', '), 'Geçersiz SFI/kayıt aralığı') : PASS(`${es.length} girdi · SFI ${[...new Set(es.map((e) => e.sfi))].join(',')}`); } },
 
   // ── Offline Data Authentication tutarlılığı (AIP ↔ sertifika tag'leri) ──
   { id: 'ODA-01', cat: 'ODA', sev: 'M', req: 'AIP en az bir ODA yöntemi bildiriyor (SDA/DDA/CDA)',
@@ -125,6 +127,8 @@ const RULES = [
     run: (c) => { const v = c.val('8E'); if (!v) return NA('8E yok'); const n = v.length / 2; return (n >= 10 && (n - 8) % 2 === 0) ? PASS(`${n} bayt, ${(n - 8) / 2} kural`) : FAIL(`${n} bayt`, 'Format hatalı'); } },
   { id: 'CVM-02', cat: 'CVM', sev: 'R', req: 'CVM için X/Y ikincil tutar alanları (8E ilk 8 bayt)',
     run: (c) => { const v = c.val('8E'); if (!v) return NA('8E yok'); return v.length >= 16 ? PASS(`X=${v.slice(0, 8)} Y=${v.slice(8, 16)}`) : FAIL(v, 'X/Y eksik'); } },
+  { id: 'CVM-03', cat: 'CVM', sev: 'R', req: 'CVM List (8E) kuralları tanınan CVM kodu içerir (method düşük 6 bit)',
+    run: (c) => { const v = c.val('8E'); if (!v) return NA('8E yok'); const rules = v.slice(16); if (rules.length < 4) return WARN('—', 'CVM kuralı yok'); const known = new Set([0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x1E, 0x1F]); const codes = []; for (let i = 0; i + 4 <= rules.length; i += 4) codes.push(parseInt(rules.slice(i, i + 2), 16) & 0x3F); const bad = codes.filter((m) => !known.has(m)); return bad.length ? WARN(`bilinmeyen: ${bad.map((m) => '0x' + m.toString(16)).join(',')}`, 'Tanınmayan CVM method kodu (RFU)') : PASS(`${codes.length} kural · ${[...new Set(codes)].map((m) => '0x' + m.toString(16).padStart(2, '0')).join(' ')}`); } },
 
   // ── Kullanım kontrolü / yerel veri ─────────────────────────────────────
   { id: 'USE-01', cat: 'Kullanım/Yerel', sev: 'R', req: 'Application Usage Control (9F07) mevcut',
@@ -157,6 +161,8 @@ const RULES = [
     run: (c) => { const t2 = c.val('57'); if (!t2) return NA('Track2 yok'); const sc = parseTrack2(t2)?.serviceCode; if (!sc) return NA('Hizmet kodu yok'); return (sc[0] === '2' || sc[0] === '6') ? PASS(`SC=${sc} (IC kart)`) : WARN(`SC=${sc}`, '1. hane 2/6 değil — chip göstermiyor'); } },
   { id: 'CON-03', cat: 'Tutarlılık', sev: 'C', spec: 'EMV Bk3 · 57 ↔ 5F24', req: 'Track2 (57) son kullanma ile tag 5F24 (YYMM) tutarlı',
     run: (c) => { const t2 = c.val('57'), exp = c.val('5F24'); if (!t2 || !exp) return NA('İki alan birden yok'); const sep = t2.indexOf('D'); if (sep < 0) return NA('Track2 format'); const t2yymm = t2.slice(sep + 1).slice(0, 4); const e = exp.slice(0, 4); return t2yymm === e ? PASS(`YYMM=${e} ✓`) : FAIL(`57=${t2yymm} 5F24=${e}`, 'Son kullanma uyuşmuyor'); } },
+  { id: 'CON-04', cat: 'Tutarlılık', sev: 'C', spec: 'EMV Bk3 · 5F24 ≥ 5F25', req: 'Son kullanma (5F24) ≥ geçerlilik başlangıcı (5F25)',
+    run: (c) => { const exp = c.val('5F24'), eff = c.val('5F25'); if (!exp || !eff) return NA('İki tarih birden yok'); if (!/^[0-9]{6}$/.test(exp) || !/^[0-9]{6}$/.test(eff)) return NA('YYMMDD değil'); return exp >= eff ? PASS(`${eff} → ${exp}`) : FAIL(`5F25=${eff} 5F24=${exp}`, 'Son kullanma, başlangıçtan önce'); } },
 
   // ── Mastercard CPV (şema-özel) ─────────────────────────────────────────
   { id: 'MC-01', cat: 'Mastercard CPV', sev: 'M', scheme: 'Mastercard', req: 'Application Version Number (9F08) mevcut',

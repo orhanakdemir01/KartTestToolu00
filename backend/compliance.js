@@ -92,6 +92,10 @@ const RULES = [
   { id: 'STR-09', cat: 'Yapı', sev: 'M', req: 'CDOL2 (8D) mevcut', iface: 'contact', run: (c) => c.has('8D') ? PASS(c.val('8D')) : FAIL('—') },
   { id: 'STR-10', cat: 'Yapı', sev: 'R', req: 'PAN Sequence Number (5F34) mevcut', run: (c) => c.has('5F34') ? PASS(c.val('5F34')) : WARN('—', 'PSN önerilir') },
   { id: 'STR-11', cat: 'Yapı', sev: 'R', req: 'Cardholder Name (5F20) mevcut', run: (c) => c.has('5F20') ? PASS(c.val('5F20')) : WARN('—') },
+  { id: 'STR-12', cat: 'Yapı', sev: 'R', spec: 'EMV Bk1 · tag 87 (API)', req: 'Application Priority Indicator (87) mevcut',
+    run: (c) => c.has('87') ? PASS(c.val('87')) : WARN('—', 'API önerilir') },
+  { id: 'STR-13', cat: 'Yapı', sev: 'R', spec: 'EMV Bk1 · tag 50/9F12', req: 'Application Label (50) veya Preferred Name (9F12) mevcut',
+    run: (c) => (c.has('50') || c.has('9F12')) ? PASS(c.has('50') ? `50=${c.val('50')}` : `9F12=${c.val('9F12')}`) : WARN('—', 'Uygulama adı önerilir') },
 
   // ── AFL / kayıt bütünlüğü ─────────────────────────────────────────────
   { id: 'AFL-01', cat: 'AFL/Kayıt', sev: 'M', req: 'AFL geçerli formatta (4-baytın katı)',
@@ -112,6 +116,8 @@ const RULES = [
     run: (c) => { const need = (c.aipB1 & 0x60) || (c.aipB1 & 0x01); if (!need) return NA('ODA yok'); return c.has('9F32') ? PASS(`9F32=${c.val('9F32')}`) : FAIL('—'); } },
   { id: 'ODA-06', cat: 'ODA', sev: 'C', req: 'SDA destekleniyorsa Signed Static App Data (93) mevcut',
     run: (c) => { if (!(c.aipB1 & 0x40)) return NA('SDA yok'); return c.has('93') ? PASS('tag 93') : WARN('—', 'SDA bildirildi ama 93 yok'); } },
+  { id: 'ODA-07', cat: 'ODA', sev: 'C', spec: 'EMV Bk3 · tag 9F4A (SDA Tag List)', req: 'SDA destekleniyorsa SDA Tag List (9F4A) mevcut',
+    run: (c) => { if (!(c.aipB1 & 0x40)) return NA('SDA yok'); return c.has('9F4A') ? PASS(c.val('9F4A')) : WARN('—', 'SDA var ama 9F4A yok'); } },
 
   // ── CVM ───────────────────────────────────────────────────────────────
   { id: 'CVM-01', cat: 'CVM', sev: 'M', req: 'CVM List (8E) format: ≥10 bayt ve (uzunluk-8) çift',
@@ -128,6 +134,8 @@ const RULES = [
     run: (c) => { const v = c.val('9F42'); if (!v) return NA('9F42 yok'); return currencyName(v) ? PASS(`${v} (${currencyName(v)})`) : FAIL(v, 'Geçersiz para birimi'); } },
   { id: 'USE-04', cat: 'Kullanım/Yerel', sev: 'R', req: 'Language Preference (5F2D) mevcut',
     run: (c) => c.has('5F2D') ? PASS(c.val('5F2D')) : WARN('—') },
+  { id: 'USE-05', cat: 'Kullanım/Yerel', sev: 'R', spec: 'EMV Bk3 · Ann. A tag 5F25', req: 'Application Effective Date (5F25) varsa geçerli YYMMDD',
+    run: (c) => { const v = c.val('5F25'); if (!v) return WARN('—', '5F25 önerilir'); return /^[0-9]{6}$/.test(v) ? PASS(v) : FAIL(v, 'YYMMDD değil'); } },
 
   // ── DOL / FCI yapısı ───────────────────────────────────────────────────
   { id: 'FCI-01', cat: 'DOL/FCI', sev: 'M', req: 'DF Name (84) seçilen AID ile eşleşir',
@@ -177,8 +185,6 @@ const RULES = [
     run: (c) => { const iac = ['9F0D', '9F0E', '9F0F'].filter((t) => c.has(t)); return iac.length === 3 ? PASS('IAC tam') : WARN(`var: ${iac.join(',') || 'yok'}`); } },
   { id: 'AX-04', cat: 'Amex', sev: 'M', scheme: 'Amex', req: 'IAD (9F10) AEIPS formatı — makul uzunluk + CVN çıkarımı',
     run: (c) => { const v = c.val('9F10') || c.genac?.iad; if (!v) return c.hasCrypto ? FAIL('—', 'IAD yok') : NA('IAD yok'); if (v.length < 8) return FAIL(v, 'IAD çok kısa (AEIPS ≥ 4 bayt)'); return PASS(`CVN=${v.slice(2, 4)} · ${v.length / 2} bayt`); } },
-  { id: 'AX-05', cat: 'Amex', sev: 'R', scheme: 'Amex', req: 'Application Effective Date (5F25) varsa geçerli YYMMDD',
-    run: (c) => { const v = c.val('5F25'); if (!v) return WARN('—', '5F25 önerilir'); return /^[0-9]{6}$/.test(v) ? PASS(v) : FAIL(v, 'YYMMDD değil'); } },
 
   // ── Discover (D-PAS, şema-özel) ────────────────────────────────────────
   { id: 'DIS-01', cat: 'Discover D-PAS', sev: 'M', scheme: 'Discover', req: 'Application Version Number (9F08) mevcut',

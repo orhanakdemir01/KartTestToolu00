@@ -35,6 +35,16 @@ export function CardTab({
               <div className="emv-top">
                 <span className="emv-brand">{emv.cardData.scheme || emv.applications?.[0]?.label || 'EMV'}</span>
               </div>
+              <div className="emv-chip" aria-label="çip">
+                <svg width="46" height="34" viewBox="0 0 46 34" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <defs><linearGradient id="emvChip" x1="0" y1="0" x2="1" y2="1"><stop stopColor="#f5d97a" /><stop offset="1" stopColor="#c99a2e" /></linearGradient></defs>
+                  <rect x="0.5" y="0.5" width="45" height="33" rx="6" fill="url(#emvChip)" stroke="rgba(0,0,0,0.18)" />
+                  <rect x="6" y="5" width="34" height="24" rx="3" fill="none" stroke="rgba(0,0,0,0.28)" />
+                  <line x1="6" y1="17" x2="40" y2="17" stroke="rgba(0,0,0,0.28)" />
+                  <line x1="17" y1="5" x2="17" y2="29" stroke="rgba(0,0,0,0.28)" />
+                  <line x1="29" y1="5" x2="29" y2="29" stroke="rgba(0,0,0,0.28)" />
+                </svg>
+              </div>
               <div className="emv-pan mono">{emv.cardData.panFormatted}</div>
               <div className="emv-bottom">
                 <div><span className="emv-lbl">KART SAHİBİ</span><span>{emv.cardData.cardholderName || '—'}</span></div>

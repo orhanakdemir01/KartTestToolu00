@@ -311,13 +311,14 @@ a:hover { color: #1a9850; text-decoration: underline; }
 }
 .emv-top { display: flex; justify-content: flex-end; align-items: center; }
 .emv-brand { font-size: 14px; font-weight: 800; color: #fff; text-align: right; letter-spacing: 0.4px; }
+.emv-chip { align-self: flex-start; line-height: 0; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.25)); }
 .luhn-ok { color: #6ee7a0; font-size: 13px; }
 .luhn-bad { color: #f7a8a8; font-size: 13px; }
 .timing { font-size: 12px; color: #7c3aed; margin-left: auto; }
 .uid-result { display: flex; flex-direction: column; gap: 6px; }
 .uid-big { font-size: 20px; letter-spacing: 2px; color: #1f2733; background: #f5f8f6; border: 1px solid #e2ebe5; padding: 12px 14px; border-radius: 9px; word-break: break-all; font-family: 'IBM Plex Mono', monospace; }
 .uid-meta { font-size: 12.5px; color: #8b9199; }
-.emv-pan { font-size: 22px; letter-spacing: 0; color: #fff; font-weight: 500; font-family: 'IBM Plex Mono', monospace; text-shadow: 0 1px 1px rgba(0,0,0,0.25); margin-top: 44px; }
+.emv-pan { font-size: 22px; letter-spacing: 0; color: #fff; font-weight: 500; font-family: 'IBM Plex Mono', monospace; text-shadow: 0 1px 1px rgba(0,0,0,0.25); }
 .emv-bottom { display: flex; justify-content: space-between; align-items: flex-end; }
 .emv-bottom > div { display: flex; flex-direction: column; gap: 2px; }
 .emv-lbl { font-size: 9px; color: #9aa6cf; letter-spacing: 1px; }

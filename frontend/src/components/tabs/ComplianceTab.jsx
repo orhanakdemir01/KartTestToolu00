@@ -20,6 +20,8 @@ const VERDICT = {
   PASS_WITH_WARN: { cls: 'warn', text: '◐ UYARILARLA UYUMLU' },
   FAIL: { cls: 'fail', text: '✗ UYUMSUZ' },
 };
+const vClsShort = (v) => (v === 'FAIL' ? 'fail' : v === 'PASS' ? 'pass' : 'warn');
+const shortDate = (iso) => { try { const d = new Date(iso); const p = (n) => String(n).padStart(2, '0'); return `${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`; } catch { return ''; } };
 
 // Build a self-contained HTML certification report.
 function reportHtml(res) {
@@ -153,6 +155,28 @@ function ComplianceResult({ res, label, busy, onRun, clear, present }) {
           { n: s.warn, label: 'uyarı', cls: 'c-warn' },
           ...(s.na ? [{ n: s.na, label: 'ilgisiz', cls: 'c-na' }] : []),
         ]} />
+        {c.regression && (
+          <div className="regr">
+            {c.regression.first ? (
+              <span className="regr-line st-extra">◷ Bu kartın ilk denetimi — geçmiş başlatıldı ({c.regression.runCount}. koşu)</span>
+            ) : c.regression.regressed.length ? (
+              <span className="regr-line st-bad"><b>⚠ REGRESYON</b> · {c.regression.regressed.length} kural PASS→FAIL: {c.regression.regressed.map((x) => x.id).join(', ')}</span>
+            ) : c.regression.fixed.length ? (
+              <span className="regr-line st-ok">✓ {c.regression.fixed.length} düzelme (FAIL→PASS): {c.regression.fixed.map((x) => x.id).join(', ')} · regresyon yok</span>
+            ) : (
+              <span className="regr-line st-ok">✓ Önceki koşuya göre değişiklik yok ({c.regression.runCount}. koşu)</span>
+            )}
+            {c.regression.recent.length > 1 && (
+              <div className="regr-hist" title="Bu kartın son denetimleri (soldan sağa: eskiden yeniye)">
+                {c.regression.recent.map((r, i) => (
+                  <span key={i} className={`regr-run v-${vClsShort(r.verdict)}`} title={`${shortDate(r.savedAt)} · ${r.iface} · ${r.verdict} · ${r.pass}✓/${r.fail}✗/${r.warn}⚠`}>
+                    {shortDate(r.savedAt)}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <div className="oda-info">
           <span className="oda-chip">{c.scheme || '?'}</span>
           {c.aid && <span className="mono small">{c.aid}</span>}

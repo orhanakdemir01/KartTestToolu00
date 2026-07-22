@@ -83,6 +83,15 @@ a:hover { color: #1a9850; text-decoration: underline; }
 /* Arayüz-bazlı "yuvada kart yok" ipucu (Denetle/Doğrula pasifken) */
 .iface-nocard { font-size: 12px; font-weight: 600; color: #a3aab0; white-space: nowrap; }
 
+/* Uyumluluk regresyon / geçmiş */
+.regr { display: flex; flex-direction: column; gap: 7px; margin: 0 0 12px; }
+.regr-line { font-size: 12.5px; font-weight: 600; }
+.regr-hist { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+.regr-run { font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 6px; border: 1px solid; white-space: nowrap; }
+.regr-run.v-pass { background: #e9f6ee; color: #157a43; border-color: #c3e6d1; }
+.regr-run.v-warn { background: #fdf4e3; color: #b45309; border-color: #f2ddb0; }
+.regr-run.v-fail { background: #fdecea; color: #c0392b; border-color: #f0cdc8; }
+
 /* Uyumluluk kuralı — spec kaynağı (izlenebilirlik) */
 .rule-spec { display: block; font-size: 10.5px; font-style: italic; color: #a3aab0; margin-top: 2px; letter-spacing: 0.2px; }
 

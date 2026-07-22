@@ -20,6 +20,7 @@ import { extractCardImage } from './cardimage.js';
 import { runCompliance } from './compliance.js';
 import { parseProfilePdf } from './pdfprofile.js';
 import { listSessions, saveSession, loadSession, deleteSession } from './sessions.js';
+import { recordAndDiff, listCards, cardHistory, clearHistory } from './history.js';
 
 const app = express();
 const PORT = 3001;
@@ -129,6 +130,18 @@ app.post('/api/card/image', async (req, res) => {
   }
 });
 
+// Kart image'ından ham PAN'ı çıkar (geçmiş anahtarı için) — 5A varsa ondan,
+// yoksa Track2 (57) 'D' ayırıcısından.
+function panFromImage(image) {
+  const tags = image?.applications?.[0]?.tags || [];
+  const val = (t) => tags.find((g) => g.tag === t)?.value;
+  const p5a = val('5A');
+  if (p5a) return p5a.replace(/\s/g, '').replace(/[Ff]+$/, '');
+  const t2 = val('57');
+  if (t2) { const s = t2.replace(/\s/g, '').toUpperCase(); const d = s.indexOf('D'); if (d > 0) return s.slice(0, d); }
+  return null;
+}
+
 // POST /api/compliance — read the card image and run the perso compliance /
 // certification rule engine (EMV core + scheme, e.g. Mastercard CPV) on it.
 app.post('/api/compliance', async (req, res) => {
@@ -151,6 +164,11 @@ app.post('/api/compliance', async (req, res) => {
       if (emv && !emv.__status) crypto = { oda: emv.oda, genac: emv.genac };
     } catch { /* crypto optional */ }
     const compliance = runCompliance(image, iface, crypto);
+    // Geçmişe kaydet + önceki koşuya göre regresyon/düzelme tespiti (kart başına).
+    try {
+      const pan = panFromImage(image);
+      if (pan) compliance.regression = recordAndDiff(pan, compliance, iface);
+    } catch { /* geçmiş kaydı opsiyonel */ }
     res.json({ mode: 'real', iface, durationMs: Date.now() - t0, image, crypto, compliance });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -317,6 +335,17 @@ app.post('/api/session/load', (req, res) => {
 
 app.post('/api/session/delete', (req, res) => {
   res.json({ deleted: deleteSession(req.body?.file || '') });
+});
+
+// ── Uyumluluk geçmişi / regresyon ──────────────────────────────────────
+app.get('/api/history', (req, res) => {
+  try { res.json({ cards: listCards() }); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/history/card', (req, res) => {
+  res.json({ runs: cardHistory(req.body?.pan || '') });
+});
+app.post('/api/history/clear', (req, res) => {
+  res.json({ cleared: clearHistory(req.body?.pan || null) });
 });
 
 // ── Change PIN (EMV PIN CHANGE/UNBLOCK, issuer script 84 24) ─────────

@@ -72,7 +72,9 @@ const CAT_SPEC = {
   'Amex': 'Amex AEIPS 3.x',
   'Discover D-PAS': 'Discover D-PAS 1.x',
   'Troy D-PAS': 'Troy D-PAS',
-  'Temassız Kernel': 'EMVCo Book C-2/C-3 (Kernel 2/3)',
+  'JCB': 'JCB J/Smart',
+  'UnionPay': 'UnionPay UICS · PBOC 3.0',
+  'Temassız Kernel': 'EMVCo Book C-2…C-8 (Kernel)',
   'ODA Kripto': 'EMV Bk2 · §6 (RSA/SDAD)',
 };
 
@@ -81,7 +83,9 @@ const KERNEL = {
   Visa: 'K3 (payWave / qVSDC)',
   Mastercard: 'K2 (PayPass / M-Chip)',
   Amex: 'K4 (ExpressPay)',
+  JCB: 'K5 (J/Speedy)',
   Discover: 'K6 (D-PAS)',
+  UnionPay: 'K7 (QuickPass)',
 };
 const kernelName = (scheme) => KERNEL[scheme] || null;
 
@@ -229,6 +233,24 @@ const RULES = [
     run: (c) => c.has('9F08') ? PASS(c.val('9F08')) : WARN('—', 'D-PAS sürümü önerilir') },
   { id: 'TR-02', cat: 'Troy D-PAS', sev: 'R', scheme: 'Troy', req: 'IAC alanları (9F0D/0E/0F) mevcut',
     run: (c) => { const iac = ['9F0D', '9F0E', '9F0F'].filter((t) => c.has(t)); return iac.length === 3 ? PASS('IAC tam') : WARN(`var: ${iac.join(',') || 'yok'}`); } },
+
+  // ── JCB (J/Smart, şema-özel) ───────────────────────────────────────────
+  { id: 'JCB-01', cat: 'JCB', sev: 'M', scheme: 'JCB', req: 'Application Version Number (9F08) mevcut',
+    run: (c) => c.has('9F08') ? PASS(c.val('9F08')) : FAIL('—') },
+  { id: 'JCB-02', cat: 'JCB', sev: 'M', scheme: 'JCB', req: 'Issuer Application Data (9F10) mevcut',
+    run: (c) => { const v = c.val('9F10') || c.genac?.iad; return v ? PASS(v + (c.has('9F10') ? '' : ' (GENERATE AC)')) : (c.hasCrypto ? FAIL('—', 'IAD yok') : WARN('—', 'Kripto akışı çalışmadı')); } },
+  { id: 'JCB-03', cat: 'JCB', sev: 'R', scheme: 'JCB', req: 'IAC Default/Denial/Online (9F0D/0E/0F) mevcut',
+    run: (c) => { const iac = ['9F0D', '9F0E', '9F0F'].filter((t) => c.has(t)); return iac.length === 3 ? PASS('IAC tam') : WARN(`var: ${iac.join(',') || 'yok'}`); } },
+
+  // ── UnionPay (UICS / PBOC 3.0, şema-özel) ──────────────────────────────
+  { id: 'UP-01', cat: 'UnionPay', sev: 'M', scheme: 'UnionPay', req: 'Application Version Number (9F08) mevcut',
+    run: (c) => c.has('9F08') ? PASS(c.val('9F08')) : FAIL('—') },
+  { id: 'UP-02', cat: 'UnionPay', sev: 'M', scheme: 'UnionPay', req: 'Issuer Application Data (9F10) mevcut',
+    run: (c) => { const v = c.val('9F10') || c.genac?.iad; return v ? PASS(v + (c.has('9F10') ? '' : ' (GENERATE AC)')) : (c.hasCrypto ? FAIL('—', 'IAD yok') : WARN('—', 'Kripto akışı çalışmadı')); } },
+  { id: 'UP-03', cat: 'UnionPay', sev: 'R', scheme: 'UnionPay', req: 'IAC Default/Denial/Online (9F0D/0E/0F) mevcut',
+    run: (c) => { const iac = ['9F0D', '9F0E', '9F0F'].filter((t) => c.has(t)); return iac.length === 3 ? PASS('IAC tam') : WARN(`var: ${iac.join(',') || 'yok'}`); } },
+  { id: 'UP-04', cat: 'UnionPay', sev: 'C', scheme: 'UnionPay', req: 'Application Usage Control (9F07) mevcut',
+    run: (c) => c.has('9F07') ? PASS(c.val('9F07')) : WARN('—', 'AUC önerilir') },
 
   // ── Temassız kernel (EMVCo Book C-2 Kernel 2 / C-3 Kernel 3) — sadece temassız ──
   { id: 'KNL-01', cat: 'Temassız Kernel', sev: 'C', iface: 'contactless', req: 'Temassız kernel kimliği (şema → EMVCo kernel)',

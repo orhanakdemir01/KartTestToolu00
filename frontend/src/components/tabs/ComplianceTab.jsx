@@ -179,6 +179,7 @@ function ComplianceResult({ res, label, busy, onRun, clear, present }) {
         )}
         <div className="oda-info">
           <span className="oda-chip">{c.scheme || '?'}</span>
+          {c.kernel && <span className="oda-chip alt">📶 {c.kernel}</span>}
           {c.aid && <span className="mono small">{c.aid}</span>}
           <span className="mono small muted">· AIP {c.aip}</span>
         </div>

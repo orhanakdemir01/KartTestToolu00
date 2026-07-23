@@ -72,8 +72,18 @@ const CAT_SPEC = {
   'Amex': 'Amex AEIPS 3.x',
   'Discover D-PAS': 'Discover D-PAS 1.x',
   'Troy D-PAS': 'Troy D-PAS',
+  'Temassız Kernel': 'EMVCo Book C-2/C-3 (Kernel 2/3)',
   'ODA Kripto': 'EMV Bk2 · §6 (RSA/SDAD)',
 };
+
+// EMVCo temassız kernel eşlemesi (şema → kernel numarası). Book C-2..C-8.
+const KERNEL = {
+  Visa: 'K3 (payWave / qVSDC)',
+  Mastercard: 'K2 (PayPass / M-Chip)',
+  Amex: 'K4 (ExpressPay)',
+  Discover: 'K6 (D-PAS)',
+};
+const kernelName = (scheme) => KERNEL[scheme] || null;
 
 // A rule: { id, cat, req, sev(M/R/C), scheme?, iface?, spec?, run(ctx) -> {status,...} }
 const RULES = [
@@ -220,6 +230,16 @@ const RULES = [
   { id: 'TR-02', cat: 'Troy D-PAS', sev: 'R', scheme: 'Troy', req: 'IAC alanları (9F0D/0E/0F) mevcut',
     run: (c) => { const iac = ['9F0D', '9F0E', '9F0F'].filter((t) => c.has(t)); return iac.length === 3 ? PASS('IAC tam') : WARN(`var: ${iac.join(',') || 'yok'}`); } },
 
+  // ── Temassız kernel (EMVCo Book C-2 Kernel 2 / C-3 Kernel 3) — sadece temassız ──
+  { id: 'KNL-01', cat: 'Temassız Kernel', sev: 'C', iface: 'contactless', req: 'Temassız kernel kimliği (şema → EMVCo kernel)',
+    run: (c) => { const k = kernelName(c.scheme); return k ? PASS(k) : WARN(c.scheme || '—', 'Kernel eşlemesi bilinmiyor'); } },
+  { id: 'KNL-02', cat: 'Temassız Kernel', sev: 'C', iface: 'contactless', scheme: 'Visa', spec: 'EMVCo Book C-3 (Kernel 3)', req: 'Kernel 3 qVSDC — Card Transaction Qualifiers (9F6C) mevcut',
+    run: (c) => c.has('9F6C') ? PASS(`CTQ ${c.val('9F6C')}`) : WARN('—', 'qVSDC CTQ (9F6C) görülmedi') },
+  { id: 'KNL-03', cat: 'Temassız Kernel', sev: 'C', iface: 'contactless', scheme: 'Mastercard', spec: 'EMVCo Book C-2 (Kernel 2)', req: 'Kernel 2 — offline auth için CDA (AIP bit1) destekleniyor',
+    run: (c) => (c.aipB1 & 0x01) ? PASS('CDA destekleniyor') : WARN(c.aip, 'K2 temassız offline auth için CDA beklenir') },
+  { id: 'KNL-04', cat: 'Temassız Kernel', sev: 'M', iface: 'contactless', spec: 'EMV Bk2 · temassız ODA', req: 'Temassız dinamik offline auth: AIP DDA (bit6) veya CDA (bit1) bildiriyor',
+    run: (c) => { if (!c.aip) return NA('AIP yok'); return ((c.aipB1 & 0x20) || (c.aipB1 & 0x01)) ? PASS(`DDA:${!!(c.aipB1 & 0x20)} CDA:${!!(c.aipB1 & 0x01)}`) : WARN(c.aip, 'Temassız dinamik ODA (fDDA/CDA) bildirilmedi'); } },
+
   // ── Offline Data Authentication — KRİPTOGRAFİK doğrulama (canlı akış) ──
   // Tag varlığı değil, sertifika zinciri/imzanın matematiksel geçerliliği.
   { id: 'CRY-01', cat: 'ODA Kripto', sev: 'M', req: 'CA Public Key (CAPK) bulundu (RID + index 8F)',
@@ -267,5 +287,5 @@ export function runCompliance(image, iface, crypto) {
     total: results.length, mandatoryFails,
     verdict: mandatoryFails === 0 ? (count('fail') === 0 ? 'PASS' : 'PASS_WITH_WARN') : 'FAIL',
   };
-  return { iface, scheme: ctx.scheme, aid: ctx.aid, aip: ctx.aip, categories: cats, summary };
+  return { iface, scheme: ctx.scheme, aid: ctx.aid, aip: ctx.aip, kernel: iface === 'contactless' ? kernelName(ctx.scheme) : null, categories: cats, summary };
 }

@@ -144,6 +144,20 @@ function traceSection(trace) {
 }
 
 // ── Ana rapor ──────────────────────────────────────────────────────────────
+// Denetimin dayandığı spec kaynakları (kural id'sine göre tekilleştirilmiş, iki
+// arayüz birleştirilmiş) → audit izlenebilirliği. [ [spec, kuralSayısı], … ]
+function specCoverage(comps) {
+  const ruleSpec = {};
+  for (const res of comps) {
+    const c = res && !res.error ? res.compliance : null;
+    if (!c) continue;
+    for (const cat of c.categories) for (const r of cat.rules) ruleSpec[r.id] = r.spec || '—';
+  }
+  const bySpec = {};
+  for (const id in ruleSpec) { const k = ruleSpec[id]; bySpec[k] = (bySpec[k] || 0) + 1; }
+  return Object.entries(bySpec).sort((a, b) => b[1] - a[1]);
+}
+
 export function buildCertReportHtml(ctx) {
   const {
     meta = {}, dut, card, emv, testResult, trace = [], readers = [], mode,
@@ -162,11 +176,20 @@ export function buildCertReportHtml(ctx) {
   let body = '';
 
   // DUT kimliği
+  const kernel = compContactless?.compliance?.kernel || null;
   if (dut) {
     body += `<section class="dut">${H('Test Edilen Kart (DUT)')}${kv([
-      ['Şema', dut.scheme], ['PAN (maskeli)', dut.pan], ['AID', dut.aid], ['Son kullanma', dut.expiry],
-      ['Kart sahibi', dut.cardholder], ['ATC', dut.atc], ['Protokol', dut.protocol], ['ATR', dut.atr],
+      ['Şema', dut.scheme], ['Temassız Kernel', kernel], ['PAN (maskeli)', dut.pan], ['AID', dut.aid],
+      ['Son kullanma', dut.expiry], ['Kart sahibi', dut.cardholder], ['ATC', dut.atc], ['Protokol', dut.protocol], ['ATR', dut.atr],
     ])}</section>`;
+  }
+
+  // Denetim tabanı — hangi otoriter spec kaynaklarına karşı denetlendiği (audit izi)
+  const specRows = specCoverage([compContact, compContactless]);
+  if (specRows.length) {
+    body += `<section>${H('Denetim Tabanı — Spec Kapsamı')}
+      <p class="muted">Bu sertifikasyon aşağıdaki otoriter kaynaklara karşı yapıldı; her verdikt ilgili spec'e izlenebilir.</p>
+      <table class="grid"><tr><th>Spec Kaynağı</th><th>Kural</th></tr>${specRows.map(([s, cnt]) => `<tr><td>${esc(s)}</td><td>${cnt}</td></tr>`).join('')}</table></section>`;
   }
 
   // Uyumluluk
@@ -213,6 +236,14 @@ export function buildCertReportHtml(ctx) {
       `</table></section>`;
   }
 
+  // Onay / imza bloğu (resmi sertifikasyon belgesi öğesi)
+  body += `<section class="sign">${H('Onay')}
+    <table class="sign-t"><tr>
+      <td>Denetleyen (operatör): <b>${esc(meta.operator || '—')}</b><br><br>İmza: ____________________</td>
+      <td>Laboratuvar / kurum: <b>${esc(meta.lab || '—')}</b><br>Referans: ${esc(meta.ref || '—')}<br>Tarih: ${esc(ts)}</td>
+    </tr></table>
+    <p class="muted">Bu rapor KartTest tarafından üretilmiştir; genel verdikt tüm denetlenen bölümlerin en kötüsüdür ve her kural yukarıdaki spec kaynaklarına izlenebilir.</p></section>`;
+
   // Trace eki
   if (trace.length) body += `<section>${H('Ek · İşlem Trace')}${traceSection(trace)}</section>`;
 
@@ -249,6 +280,7 @@ export function buildCertReportHtml(ctx) {
     .mono,td.mono{font-family:'Consolas',monospace;}
     .pass{color:#15803d;}.fail{color:#b91c1c;}.muted{color:#888;font-size:12px;}
     tr.rp td:first-child{color:#15803d;font-weight:bold;}tr.rf td:first-child{color:#b91c1c;font-weight:bold;}tr.rf{background:#fef2f2;}
+    .sign-t td{border:1px solid #ccc;padding:16px;width:50%;font-size:12.5px;vertical-align:top;}
     ${TLV_CSS}
     @media print{body{padding:0;}.te,section,tr{break-inside:avoid;}}
   </style></head><body>

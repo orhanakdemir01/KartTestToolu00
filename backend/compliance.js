@@ -101,7 +101,7 @@ const RULES = [
   { id: 'STR-04', cat: 'Yapı', sev: 'M', req: 'PAN Luhn kontrolünden geçer',
     run: (c) => { const p = c.val('5A') ? clean(c.val('5A')).replace(/F+$/, '') : (parseTrack2(c.val('57') || '')?.pan); if (!p) return NA('PAN yok'); return luhnCheck(p) ? PASS(p) : FAIL(p, 'Luhn hatalı'); } },
   { id: 'STR-05', cat: 'Yapı', sev: 'M', req: 'AIP (82) mevcut', run: (c) => c.aip ? PASS(c.aip) : FAIL('—') },
-  { id: 'STR-06', cat: 'Yapı', sev: 'M', req: 'AFL (94) mevcut', run: (c) => c.afl ? PASS(c.afl) : FAIL('—') },
+  { id: 'STR-06', cat: 'Yapı', sev: 'M', req: 'AFL (94) mevcut', run: (c) => c.afl ? PASS(c.afl) : (c.iface === 'contactless' && c.aip ? WARN('—', 'Temassız: GPO AIP döndürdü, AFL yok — kernel GPO-tabanlı akışı destekler') : FAIL('—')) },
   { id: 'STR-07', cat: 'Yapı', sev: 'M', req: 'CVM List (8E) mevcut', run: (c) => c.has('8E') ? PASS(c.val('8E').slice(0, 20) + '…') : FAIL('—') },
   { id: 'STR-08', cat: 'Yapı', sev: 'M', req: 'CDOL1 (8C) mevcut', iface: 'contact', run: (c) => c.has('8C') ? PASS(c.val('8C')) : FAIL('—') },
   { id: 'STR-09', cat: 'Yapı', sev: 'M', req: 'CDOL2 (8D) mevcut', iface: 'contact', run: (c) => c.has('8D') ? PASS(c.val('8D')) : FAIL('—') },
@@ -114,7 +114,7 @@ const RULES = [
 
   // ── AFL / kayıt bütünlüğü ─────────────────────────────────────────────
   { id: 'AFL-01', cat: 'AFL/Kayıt', sev: 'M', req: 'AFL geçerli formatta (4-baytın katı)',
-    run: (c) => { if (!c.afl) return FAIL('—'); return c.afl.length % 8 === 0 ? PASS(`${c.afl.length / 8} girdi`) : FAIL(c.afl, '4 baytın katı değil'); } },
+    run: (c) => { if (!c.afl) return c.iface === 'contactless' ? NA('Temassız: AFL yok (GPO-tabanlı akış)') : FAIL('—'); return c.afl.length % 8 === 0 ? PASS(`${c.afl.length / 8} girdi`) : FAIL(c.afl, '4 baytın katı değil'); } },
   { id: 'AFL-02', cat: 'AFL/Kayıt', sev: 'M', req: "AFL'nin işaret ettiği tüm kayıtlar okundu",
     run: (c) => { if (!c.afl) return NA('AFL yok'); const entries = parseAfl(c.afl); let need = 0; for (const e of entries) need += (e.lastRecord - e.firstRecord + 1); const got = c.records.length; return got >= need ? PASS(`${got}/${need} kayıt`) : FAIL(`${got}/${need}`, 'Eksik kayıt'); } },
   { id: 'AFL-03', cat: 'AFL/Kayıt', sev: 'M', req: 'AFL girdileri geçerli (SFI 1-30, 1 ≤ ilk ≤ son kayıt)',

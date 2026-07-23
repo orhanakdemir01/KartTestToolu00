@@ -144,28 +144,9 @@ class PcscManager {
     return null;
   }
 
-  /**
-   * Transmit an APDU (Buffer) to the first connected card.
-   * Returns a Promise resolving to { response, sw } as hex strings.
-   */
-  transmit(apduBuffer, preferName) {
+  // Tek APDU gönderimi (düşük seviye).
+  _rawTransmit(target, apduBuffer) {
     return new Promise((resolve, reject) => {
-      let target = null;
-      if (preferName) {
-        // KATI: istenen okuyucuda bağlı kart yoksa BAŞKA okuyucuya düşme.
-        const e = this.readers.get(preferName);
-        if (e && e.present && e.connected) target = e;
-      } else {
-        for (const [, e] of this.readers) {
-          if (e.present && e.connected) { target = e; break; }
-        }
-      }
-      if (!target) {
-        return reject(new Error(preferName
-          ? `İstenen okuyucuda bağlı kart yok: ${preferName}`
-          : 'No connected card available'));
-      }
-
       target.reader.transmit(apduBuffer, 512, target.protocol, (err, data) => {
         if (err) return reject(err);
         const full = hex(data);
@@ -173,6 +154,58 @@ class PcscManager {
         resolve({ response: full, sw });
       });
     });
+  }
+
+  // Karta yeniden bağlan (SCardReconnect, kartı resetleyerek). Bağlantı bayatladıysa
+  // (kart sıfırlandı) toparlar; yeni protokolü entry'e yazar.
+  _reconnectCard(target) {
+    return new Promise((resolve, reject) => {
+      const r = target.reader;
+      r.reconnect(
+        { share_mode: r.SCARD_SHARE_SHARED, initialization: r.SCARD_RESET_CARD },
+        (err, protocol) => {
+          if (err) return reject(err);
+          target.protocol = protocol;
+          target.connected = true;
+          resolve();
+        }
+      );
+    });
+  }
+
+  /**
+   * Transmit an APDU (Buffer) to the first connected card.
+   * Kart-reset (0x80100068 SCARD_W_RESET_CARD / 0x80100069 SCARD_W_REMOVED_CARD)
+   * hatasında bir kez yeniden bağlanıp tekrar dener — bir işlemden (transaction)
+   * sonra bayatlayan bağlantı için backend restart gerektirmeden kendini toparlar.
+   * Returns a Promise resolving to { response, sw } as hex strings.
+   */
+  async transmit(apduBuffer, preferName) {
+    let target = null;
+    if (preferName) {
+      // KATI: istenen okuyucuda bağlı kart yoksa BAŞKA okuyucuya düşme.
+      const e = this.readers.get(preferName);
+      if (e && e.present && e.connected) target = e;
+    } else {
+      for (const [, e] of this.readers) {
+        if (e.present && e.connected) { target = e; break; }
+      }
+    }
+    if (!target) {
+      throw new Error(preferName
+        ? `İstenen okuyucuda bağlı kart yok: ${preferName}`
+        : 'No connected card available');
+    }
+
+    try {
+      return await this._rawTransmit(target, apduBuffer);
+    } catch (err) {
+      const reset = /0x8010006[89]\b/i.test(String(err?.message || ''));
+      if (!reset) throw err;
+      // Kart oturumu geçersiz — yeniden bağlan ve bir kez daha dene.
+      await this._reconnectCard(target);
+      return await this._rawTransmit(target, apduBuffer);
+    }
   }
 }
 

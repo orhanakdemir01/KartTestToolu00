@@ -17,7 +17,7 @@ import { listKeysMasked, addKeySet, updateKeySet, deleteKeySet, getKeySet, findE
 import { buildPinChange, buildUnblockVariants, buildVerifyPlaintext } from './changepin.js';
 import { discoverCardContext } from './carddiscover.js';
 import { extractCardImage } from './cardimage.js';
-import { runCompliance } from './compliance.js';
+import { runCompliance, ruleManifest } from './compliance.js';
 import { parseProfilePdf } from './pdfprofile.js';
 import { listSessions, saveSession, loadSession, deleteSession } from './sessions.js';
 import { recordAndDiff, listCards, cardHistory, clearHistory } from './history.js';
@@ -191,6 +191,31 @@ app.post('/api/profile/parse', express.raw({ type: ['application/pdf', 'applicat
 // GET /api/terminal/meta — editable terminal fields, defaults and scenario presets
 app.get('/api/terminal/meta', (req, res) => {
   res.json({ fields: TERMINAL_FIELDS, defaults: terminalDefaults(), presets: TERMINAL_PRESETS });
+});
+
+// GET /api/manifest — aracın kabiliyet özeti (Genel Bakış panosu için).
+app.get('/api/manifest', (req, res) => {
+  const rm = ruleManifest();
+  const keys = listKeys();
+  const capkByScheme = {};
+  for (const k of keys) capkByScheme[k.scheme] = (capkByScheme[k.scheme] || 0) + 1;
+  // CAPK deposundaki şema adı ile manifest adı farklı olabilir (Amex ↔ American Express).
+  const capkFor = (name) => (capkByScheme[name] || 0) + (name === 'Amex' ? (capkByScheme['American Express'] || 0) : 0);
+  const schemes = [
+    { name: 'Visa', rid: 'A000000003', kernel: 'K3 (payWave/qVSDC)' },
+    { name: 'Mastercard', rid: 'A000000004', kernel: 'K2 (PayPass/M-Chip)' },
+    { name: 'Amex', rid: 'A000000025', kernel: 'K4 (ExpressPay)' },
+    { name: 'Discover', rid: 'A000000152', kernel: 'K6 (D-PAS)' },
+    { name: 'Troy', rid: 'A000000672', kernel: '—' },
+    { name: 'JCB', rid: 'A000000065', kernel: 'K5 (J/Speedy)' },
+    { name: 'UnionPay', rid: 'A000000333', kernel: 'K7 (QuickPass)' },
+  ].map((s) => ({ ...s, capks: capkFor(s.name) }));
+  res.json({
+    schemes,
+    rules: { count: rm.count, categories: rm.categories.length, sev: rm.sev },
+    capkCount: keys.length,
+    scenarioCount: TERMINAL_PRESETS.length,
+  });
 });
 
 // POST /api/scenario/run — run selected terminal-profile scenarios against the

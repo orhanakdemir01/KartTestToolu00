@@ -83,6 +83,17 @@ a:hover { color: #1a9850; text-decoration: underline; }
 /* Arayüz-bazlı "yuvada kart yok" ipucu (Denetle/Doğrula pasifken) */
 .iface-nocard { font-size: 12px; font-weight: 600; color: #a3aab0; white-space: nowrap; }
 
+/* Genel Bakış — kabiliyet kartları + hızlı erişim */
+.ov-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 12px 0 6px; }
+.ov-card { background: #f5faf7; border: 1px solid #c3e6d1; border-radius: 12px; padding: 16px; text-align: center; }
+.ov-big { font-size: 30px; font-weight: 800; color: #157a43; line-height: 1; letter-spacing: -0.5px; }
+.ov-lbl { font-size: 12px; color: #3d4650; margin-top: 6px; }
+.ov-nav { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.ov-navbtn { display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 13px 15px; background: #fff; border: 1px solid #e6eae8; border-radius: 11px; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.ov-navbtn:hover { border-color: #1a9850; background: #f5faf7; }
+.ov-navlbl { font-size: 14px; font-weight: 700; color: #1f2733; }
+.ov-navdesc { font-size: 11.5px; color: #8b9199; }
+
 /* Geçmiş — zaman çizelgesi */
 .hist-timeline { display: flex; flex-direction: column; gap: 8px; border-left: 2px solid #e6eae8; padding-left: 14px; }
 .hist-run { display: flex; flex-direction: column; gap: 4px; position: relative; }

@@ -17,6 +17,7 @@ import { ReportTab } from './components/tabs/ReportTab.jsx';
 import { SessionTab } from './components/tabs/SessionTab.jsx';
 import { HistoryTab } from './components/tabs/HistoryTab.jsx';
 import { BatchTab } from './components/tabs/BatchTab.jsx';
+import { OverviewTab } from './components/tabs/OverviewTab.jsx';
 import { buildBatchReportHtml } from './lib/batchreport.js';
 import { TraceDock } from './components/TraceDock.jsx';
 
@@ -68,6 +69,9 @@ const QUICK = [
 // Tabs grouped into logical categories → sidebar navigation (group + items).
 // desc = short subtitle shown in the top bar for that tab.
 const TAB_GROUPS = [
+  { id: 'home', label: 'Genel', icon: '🏠', tabs: [
+    { id: 'overview', label: 'Genel Bakış', icon: '📊', desc: 'Kabiliyet özeti · şema / kernel / kural kapsamı' },
+  ] },
   { id: 'read', label: 'Bağlantı & Okuma', icon: '📖', tabs: [
     { id: 'card', label: 'Kart & EMV', icon: '💳', desc: 'PPSE → SELECT AID → GPO → READ RECORD zinciri' },
     { id: 'image', label: 'Kart Image', icon: '🗂', desc: 'Tüm personalize EMV tag’lerini çıkar (CPV/VPA)' },
@@ -110,7 +114,8 @@ function App() {
   const [testResult, setTestResult] = useState(null);
   const [testBusy, setTestBusy] = useState(false);
   const [trace, setTrace] = useState([]);
-  const [activeTab, setActiveTab] = useState('card');
+  const [activeTab, setActiveTab] = useState('overview');
+  const [manifest, setManifest] = useState(null);
   const [groupLast, setGroupLast] = useState({}); // remember last sub-tab per group
   const [traceOpen, setTraceOpen] = useState(false);
   const [uid, setUid] = useState(null);
@@ -341,6 +346,7 @@ function App() {
   useEffect(() => { loadSessionKeys(); }, []);
   useEffect(() => { loadSessionsList(); }, []);
   useEffect(() => { loadHistoryCards(); }, []);
+  useEffect(() => { fetch(`${API}/manifest`).then((r) => r.json()).then(setManifest).catch(() => {}); }, []);
 
   // ── Send APDU ──
   const send = async (cmdArg) => {
@@ -1165,6 +1171,10 @@ ${apps}
               )}
             </div>
           )}
+
+      {activeTab === 'overview' && (
+        <OverviewTab manifest={manifest} cardPresent={cardPresent} emv={emv} selectTab={selectTab} />
+      )}
 
       {activeTab === 'card' && (
         <CardTab

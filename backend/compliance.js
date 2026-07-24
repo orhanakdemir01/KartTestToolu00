@@ -311,3 +311,16 @@ export function runCompliance(image, iface, crypto) {
   };
   return { iface, scheme: ctx.scheme, aid: ctx.aid, aip: ctx.aip, kernel: iface === 'contactless' ? kernelName(ctx.scheme) : null, categories: cats, summary };
 }
+
+// Kural motorunun kapsam özeti (Genel Bakış panosu / kabiliyet manifesti için).
+export function ruleManifest() {
+  const bySev = { M: 0, R: 0, C: 0 };
+  for (const r of RULES) if (bySev[r.sev] != null) bySev[r.sev]++;
+  return {
+    count: RULES.length,
+    categories: [...new Set(RULES.map((r) => r.cat))],
+    schemes: [...new Set(RULES.filter((r) => r.scheme).map((r) => r.scheme))],
+    kernels: KERNEL,
+    sev: bySev,
+  };
+}

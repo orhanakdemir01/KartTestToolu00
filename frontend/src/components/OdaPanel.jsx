@@ -66,16 +66,25 @@ export function OdaPanel({ oda }) {
       <h3>Offline Veri Doğrulama (ODA){label ? ` — ${label}` : ''}</h3>
       {oda.error && <p className="err-text">ODA hatası: {oda.error}</p>}
       {!oda.capkFound && oda.rid && <p className="err-text">⚠ CAPK bulunamadı (RID {oda.rid}, index {oda.capkIndex}) — "CA Anahtarları" sekmesinden ekleyin.</p>}
-      {oda.capkFound && (
+      {oda.capkFound && (() => {
+        // Temassız online qVSDC: GPO'da AFL yok → ICC PK sertifika hash'i için gereken
+        // SDA "static data to be authenticated" tanımsız. Issuer PK zinciri kurtarılır
+        // ama ICC PK doğrulanamaz — bu kart-modu kısıtı, araç eksikliği değildir.
+        const onlineNoAfl = oda.noAfl && oda.issuerPK?.ok && !oda.iccPK?.ok;
+        return (
         <>
-          <p className={oda.ok ? 'capk-ok' : 'err-text'}>
-            {oda.ok ? '✓ Sertifika zinciri DOĞRULANDI' : '✗ Sertifika zinciri doğrulanamadı'} · CAPK RID {oda.rid} idx {oda.capkIndex}
+          <p className={oda.ok ? 'capk-ok' : onlineNoAfl ? 'oda-partial' : 'err-text'}>
+            {oda.ok ? '✓ Sertifika zinciri DOĞRULANDI' : onlineNoAfl ? '◐ Sertifika zinciri KISMİ (Issuer PK doğrulandı)' : '✗ Sertifika zinciri doğrulanamadı'} · CAPK RID {oda.rid} idx {oda.capkIndex}
           </p>
           <OdaCertBlock title="Issuer Public Key Certificate (90)" cert={oda.issuerPK} />
-          <OdaCertBlock title="ICC Public Key Certificate (9F46)" cert={oda.iccPK} />
+          <OdaCertBlock title="ICC Public Key Certificate (9F46)" cert={oda.iccPK} status={onlineNoAfl ? 'partial' : undefined} />
+          {onlineNoAfl && (
+            <p className="muted small oda-fdda-note">◐ <b>ICC PK sertifikası temassızda doğrulanamıyor.</b> Kart bu terminal profilinde <b>online qVSDC</b> modunda çalışıyor: GPO yanıtı AC'yi (9F26) doğrudan döndürüyor ama <b>AFL (94) ve SDA/9F4A içermiyor</b>, dolayısıyla ICC PK sertifika hash'i için gereken "static data to be authenticated" kartın APDU yanıtından tanımlı değil. Issuer PK zinciri (CAPK → Issuer PK) yine de kurtarıldı. Bu kartın <b>tam offline veri doğrulaması temaslı arayüzde</b> yapılır (orada CDA/DDA geçer) — temassız kısıt kart davranışıdır, araç eksikliği değildir.</p>
+          )}
           {dynamics.map((dyn, i) => <OdaDynamicBlock key={i} dyn={dyn} />)}
         </>
-      )}
+        );
+      })()}
     </div>
   );
 }

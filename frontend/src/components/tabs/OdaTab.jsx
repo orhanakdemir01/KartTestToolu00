@@ -30,6 +30,9 @@ function OdaResult({ res, label, busy, onRun, clear, present }) {
     else if (certOk && allDynOk) verdict = { cls: 'pass', text: '✓ GEÇTİ' };
     else if (certOk && !realDyns.length) verdict = { cls: 'warn', text: '◐ ZİNCİR OK · İMZA YOK' };
     else if (certOk && anyPartial && !realDyns.some((d) => !dynState(d).ok && !dynState(d).partial)) verdict = { cls: 'warn', text: '◐ KISMİ' };
+    // Temassız online qVSDC: AFL yok → ICC PK hash'i için SDA statik verisi tanımsız.
+    // Issuer PK zinciri kurtarıldıysa bu bir hard-fail değil, kart-modu durumudur.
+    else if (oda.noAfl && oda.issuerPK?.ok) verdict = { cls: 'warn', text: '◐ ONLINE qVSDC · AFL YOK' };
     else verdict = { cls: 'fail', text: '✗ BAŞARISIZ' };
   }
 

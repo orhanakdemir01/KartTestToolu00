@@ -174,6 +174,26 @@ export async function runEmvFlow(preferReader, body = {}) {
           }
         }
       }
+    } else {
+      // Temassız qVSDC (QuickPass/payWave) GPO'da AFL döndürmeyebilir; yine de ODA
+      // sertifikaları (8F/90/9F46/9F47/9F32) kayıtlarda bulunur. SFI brute-force ile
+      // topla ki offline sertifika zinciri (Issuer PK → ICC PK) doğrulanabilsin.
+      for (let sfi = 1; sfi <= 8; sfi++) {
+        const p2 = ((sfi << 3) | 4).toString(16).padStart(2, '0').toUpperCase();
+        for (let r = 1; r <= 6; r++) {
+          const rec = await step(`READ RECORD SFI${sfi} #${r} (AFL yok — temassız)`, `00B2${r.toString(16).padStart(2, '0').toUpperCase()}${p2}00`);
+          if (rec.ok && rec.tlv.ok) {
+            records.push({ sfi, record: r, nodes: rec.tlv.nodes });
+            collectedNodes.push(...rec.tlv.nodes);
+            // Not: AFL olmadığı için SDA statik verisi (ICC PK sertifika hash'i) güvenilir
+            // biçimde kurulamaz; Issuer PK zinciri yine de doğrulanır. Kart temassızda
+            // online qVSDC modundaysa (AFL/SDAD yok) ICC PK hash'i doğrulanamaz — bu
+            // kart davranışıdır, offline auth contact arayüzünde yapılır.
+          } else if (r === 1) {
+            break; // bu SFI'de kayıt yok — sonrakine geç
+          }
+        }
+      }
     }
 
     // Extract cardholder data from all collected TLVs
@@ -253,7 +273,9 @@ export async function runEmvFlow(preferReader, body = {}) {
       const rid = aid ? aid.slice(0, 10) : null;
       if (cert90 && cert9F46 && capkIndex && rid) {
         const capk = findKey(rid, capkIndex);
-        oda = { rid, capkIndex, capkFound: !!capk };
+        // noAfl: temassız online qVSDC (AFL yok) → SDA statik verisi tanımsız, ICC PK
+        // hash'i doğrulanamaz; bu bir kart-modu durumudur, hard fail değil.
+        oda = { rid, capkIndex, capkFound: !!capk, noAfl: !aflHex };
         if (capk) {
           let staticData = sdaStaticData;
           const t9F4A = findTag(collectedNodes, '9F4A');

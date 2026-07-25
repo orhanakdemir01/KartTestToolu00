@@ -43,6 +43,8 @@ const PAN_LEN = { Visa: [13, 16, 19], Mastercard: [16], Amex: [15], Discover: [1
 // YYMMDD (EMV n6) → bugünle kıyas için YYYYMMDD dizesi (2000+YY varsayımı).
 const ymd6 = (v) => '20' + v;
 const todayYmd = () => { const t = new Date(); return `${t.getFullYear()}${String(t.getMonth() + 1).padStart(2, '0')}${String(t.getDate()).padStart(2, '0')}`; };
+// Sertifika son kullanma (MMYY, EMV Bk2) → geçerli mi (ayın sonuna kadar). 20YY varsayımı.
+const certExpValid = (mmyy) => { if (!/^[0-9]{4}$/.test(mmyy || '')) return null; const cert = '20' + mmyy.slice(2, 4) + mmyy.slice(0, 2); const t = new Date(); const today = `${t.getFullYear()}${String(t.getMonth() + 1).padStart(2, '0')}`; return { mmyy, valid: cert >= today }; };
 
 // AIP (82) byte-1 yetenek bitleri → etiketler (EMV Bk3 Ann. C1). Şemadan bağımsız.
 function decodeAip(b1) {
@@ -431,6 +433,12 @@ const RULES = [
     // Önerilen (R) kural: eşleşmezlik FAIL değil WARN — yanlış/eksik yapılandırılmış
     // işlem anahtarı da eşleşmezlik verir, bu bir kart kusuru olmayabilir.
     run: (c) => { if (!c.hasCrypto || !c.genac?.arqc) return NA('AC yok'); const v = c.genac.verify; if (!v) return NA('Doğrulama yok'); if (v.noKey) return WARN('—', 'Bu PAN için oturum anahtarı yok — Oturum Anahtarları sekmesi'); return v.match ? PASS(`anahtar ${v.keyLabel || ''}`) : WARN('—', 'ARQC eşleşmedi — anahtar yanlış/eksik olabilir'); } },
+  // Sertifika son-kullanma (recovered cert'ten): Issuer PK cert MMYY @ bayt 6-7, ICC PK
+  // cert MMYY @ bayt 12-13 (EMV Bk2 §6.3/6.4). Süresi dolmuşsa canlı terminalde ODA FAIL.
+  { id: 'CRY-08', cat: 'ODA Kripto', sev: 'R', spec: 'EMV Bk2 · §6.3 (Issuer cert son kullanma)', req: 'Issuer PK Sertifikası (90) süresi geçmemiş',
+    run: (c) => { const rec = c.oda?.issuerPK?.recovered; if (!c.hasCrypto || !rec || rec.length < 16 || rec.slice(0, 2).toUpperCase() !== '6A') return NA('Recovered Issuer cert yok'); const e = certExpValid(rec.slice(12, 16)); if (!e) return NA('Tarih çözülemedi'); return e.valid ? PASS(`son ${e.mmyy} (MMYY)`) : WARN(`son ${e.mmyy}`, 'Issuer PK sertifikası süresi dolmuş — canlı terminalde ODA reddedilir'); } },
+  { id: 'CRY-09', cat: 'ODA Kripto', sev: 'R', spec: 'EMV Bk2 · §6.4 (ICC cert son kullanma)', req: 'ICC PK Sertifikası (9F46) süresi geçmemiş',
+    run: (c) => { const rec = c.oda?.iccPK?.recovered; if (!c.hasCrypto || !rec || rec.length < 28 || rec.slice(0, 2).toUpperCase() !== '6A') return NA('Recovered ICC cert yok'); const e = certExpValid(rec.slice(24, 28)); if (!e) return NA('Tarih çözülemedi'); return e.valid ? PASS(`son ${e.mmyy} (MMYY)`) : WARN(`son ${e.mmyy}`, 'ICC PK sertifikası süresi dolmuş — canlı terminalde ODA reddedilir'); } },
 
   // ── Kriptogram Sürümü (CVN) tanımlama — IAD'den CVN + bilinen algoritma ──
   { id: 'CVN-01', cat: 'Kriptogram Sürümü (CVN)', sev: 'R', spec: 'EMV Bk2 · §8.2 (CVN)', req: 'Cryptogram Version Number (CVN) tanımlanır + bilinen algoritma',

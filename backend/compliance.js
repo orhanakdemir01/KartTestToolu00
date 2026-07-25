@@ -20,6 +20,30 @@ function validDol(hex) {
   return { ok: true, entries, tags: entries.map((e) => e.tag.toUpperCase()) };
 }
 
+// Kart PAN'ini çıkar (5A dolgu-temizli, yoksa Track2'den). STR-04 ile aynı mantık.
+const cardPan = (c) => c.val('5A') ? clean(c.val('5A')).replace(/F+$/, '') : (parseTrack2(c.val('57') || '')?.pan || null);
+
+// PAN → majör IIN aralığına göre ödeme şeması (ISO/IEC 7812 · şema IIN blokları).
+// Yalnızca yaygın/kesin bloklar; belirsiz eş-markalama aralıkları null döner.
+function detectPanScheme(pan) {
+  if (!pan || pan.length < 4) return null;
+  const n2 = parseInt(pan.slice(0, 2), 10);
+  const n4 = parseInt(pan.slice(0, 4), 10);
+  if (pan[0] === '4') return 'Visa';
+  if ((n2 >= 51 && n2 <= 55) || (n4 >= 2221 && n4 <= 2720)) return 'Mastercard';
+  if (n2 === 34 || n2 === 37) return 'Amex';
+  if (pan.startsWith('9792')) return 'Troy';
+  if (pan.startsWith('6011') || n2 === 65 || (n4 >= 644 && n4 <= 649)) return 'Discover';
+  if (n4 >= 3528 && n4 <= 3589) return 'JCB';
+  if (n2 === 62 || n2 === 81) return 'UnionPay';
+  return null;
+}
+// Şema başına kabul edilen PAN uzunlukları (ISO/IEC 7812; Amex 15, MC 16 kesin).
+const PAN_LEN = { Visa: [13, 16, 19], Mastercard: [16], Amex: [15], Discover: [16, 19], JCB: [16, 17, 18, 19], UnionPay: [16, 17, 18, 19], Troy: [16] };
+// YYMMDD (EMV n6) → bugünle kıyas için YYYYMMDD dizesi (2000+YY varsayımı).
+const ymd6 = (v) => '20' + v;
+const todayYmd = () => { const t = new Date(); return `${t.getFullYear()}${String(t.getMonth() + 1).padStart(2, '0')}${String(t.getDate()).padStart(2, '0')}`; };
+
 // Build a lookup context over one card image (aggregating tags across all apps).
 // `crypto` (optional) = { oda, genac } from the live EMV flow, so rules can also
 // verify offline auth cryptographically and inspect GENERATE AC output.
@@ -67,6 +91,7 @@ const CAT_SPEC = {
   'Kullanım Kontrolü (AUC)': 'EMV Bk3 · Ann. A (AUC/yerel)',
   'DOL/FCI': 'EMV Bk1 §11.3 (FCI) · Bk3 §5.4 (DOL)',
   'Veri Formatı': 'EMV Bk3 · Ann. A (veri öğesi format/uzunluk)',
+  'Kart Veri Bütünlüğü': 'ISO/IEC 7812 · 7813 (PAN/IIN/tarih bütünlüğü)',
   'Tutarlılık': 'EMV Bk3 · Çapraz-alan tutarlılık',
   'Mastercard CPV': 'M/Chip Requirements · CPV',
   'Visa VIS/qVSDC': 'Visa VIS 1.6 · VCPS 2.x (qVSDC)',
@@ -196,6 +221,16 @@ const RULES = [
     run: (c) => { const t2 = c.val('57'), exp = c.val('5F24'); if (!t2 || !exp) return NA('İki alan birden yok'); const sep = t2.indexOf('D'); if (sep < 0) return NA('Track2 format'); const t2yymm = t2.slice(sep + 1).slice(0, 4); const e = exp.slice(0, 4); return t2yymm === e ? PASS(`YYMM=${e} ✓`) : FAIL(`57=${t2yymm} 5F24=${e}`, 'Son kullanma uyuşmuyor'); } },
   { id: 'CON-04', cat: 'Tutarlılık', sev: 'C', spec: 'EMV Bk3 · 5F24 ≥ 5F25', req: 'Son kullanma (5F24) ≥ geçerlilik başlangıcı (5F25)',
     run: (c) => { const exp = c.val('5F24'), eff = c.val('5F25'); if (!exp || !eff) return NA('İki tarih birden yok'); if (!/^[0-9]{6}$/.test(exp) || !/^[0-9]{6}$/.test(eff)) return NA('YYMMDD değil'); return exp >= eff ? PASS(`${eff} → ${exp}`) : FAIL(`5F25=${eff} 5F24=${exp}`, 'Son kullanma, başlangıçtan önce'); } },
+
+  // ── Kart veri bütünlüğü (PAN IIN ↔ şema · uzunluk · tarih geçerliliği) ──
+  { id: 'CVD-01', cat: 'Kart Veri Bütünlüğü', sev: 'C', spec: 'ISO/IEC 7812 · IIN ↔ şema', req: 'PAN IIN öneki seçilen AID şemasıyla tutarlı',
+    run: (c) => { const pan = cardPan(c); if (!pan) return NA('PAN yok'); if (!c.scheme) return NA('Şema bilinmiyor'); const det = detectPanScheme(pan); if (!det) return WARN(`IIN ${pan.slice(0, 6)}`, 'PAN IIN majör aralıklara uymuyor'); return det === c.scheme ? PASS(`IIN ${pan.slice(0, 6)} → ${det}`) : WARN(`PAN→${det} · AID→${c.scheme}`, 'PAN IIN farklı şema gösteriyor (eş-marka olabilir — doğrula)'); } },
+  { id: 'CVD-02', cat: 'Kart Veri Bütünlüğü', sev: 'C', spec: 'ISO/IEC 7812 · PAN uzunluğu', req: 'PAN uzunluğu şema için geçerli aralıkta',
+    run: (c) => { const pan = cardPan(c); if (!pan) return NA('PAN yok'); const allow = PAN_LEN[c.scheme]; if (!allow) return NA('Şema uzunluk tablosu yok'); return allow.includes(pan.length) ? PASS(`${pan.length} hane`) : WARN(`${pan.length} hane`, `${c.scheme} için beklenen: ${allow.join('/')}`); } },
+  { id: 'CVD-03', cat: 'Kart Veri Bütünlüğü', sev: 'R', spec: 'EMV Bk3 · tag 5F24', req: 'Application Expiration Date (5F24) geçmemiş',
+    run: (c) => { const v = c.val('5F24'); if (!v || !/^[0-9]{6}$/.test(v)) return NA('5F24 yok/format'); return ymd6(v) >= todayYmd() ? PASS(`${v} geçerli`) : WARN(`${v} (dolmuş)`, 'Kartın süresi dolmuş — test kartında beklenebilir'); } },
+  { id: 'CVD-04', cat: 'Kart Veri Bütünlüğü', sev: 'C', spec: 'EMV Bk3 · tag 5F25', req: 'Application Effective Date (5F25) gelecekte değil',
+    run: (c) => { const v = c.val('5F25'); if (!v || !/^[0-9]{6}$/.test(v)) return NA('5F25 yok/format'); return ymd6(v) <= todayYmd() ? PASS(`${v} aktif`) : WARN(`${v} (gelecek)`, 'Geçerlilik başlangıcı gelecekte — kart henüz aktif değil'); } },
 
   // ── Mastercard CPV (şema-özel) ─────────────────────────────────────────
   { id: 'MC-01', cat: 'Mastercard CPV', sev: 'M', scheme: 'Mastercard', req: 'Application Version Number (9F08) mevcut',

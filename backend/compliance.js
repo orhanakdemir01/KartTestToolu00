@@ -82,6 +82,20 @@ function decodeAuc(hex) {
   if (b2 & 0x80) f.push('yurtiçi cashback'); if (b2 & 0x40) f.push('yurtdışı cashback');
   return { flags: f, b1, b2 };
 }
+// TVR/IAC (5 bayt) bit → koşul etiketi (EMV Bk3 Ann. C5). IAC'ler TVR formatındadır.
+const TVR_BITS = [
+  [0, 0x80, 'ODA yapılmadı'], [0, 0x40, 'SDA başarısız'], [0, 0x20, 'ICC verisi eksik'],
+  [0, 0x10, 'exception file'], [0, 0x08, 'DDA başarısız'], [0, 0x04, 'CDA başarısız'], [0, 0x02, 'SDA seçildi'],
+  [1, 0x80, 'sürüm uyuşmazlığı'], [1, 0x40, 'süresi dolmuş'], [1, 0x20, 'henüz geçerli değil'], [1, 0x10, 'servis izinli değil'], [1, 0x08, 'yeni kart'],
+  [2, 0x80, 'CVM başarısız'], [2, 0x40, 'tanınmayan CVM'], [2, 0x20, 'PIN deneme aşıldı'], [2, 0x10, 'PIN pad yok'], [2, 0x08, 'PIN girilmedi'], [2, 0x04, 'online PIN'],
+  [3, 0x80, 'floor limit aşıldı'], [3, 0x40, 'alt offline limit aşıldı'], [3, 0x20, 'üst offline limit aşıldı'], [3, 0x10, 'rastgele online'], [3, 0x08, 'merchant zorladı'],
+  [4, 0x80, 'default TDOL'], [4, 0x40, 'issuer auth başarısız'], [4, 0x20, 'script öncesi hata'], [4, 0x10, 'script sonrası hata'],
+];
+function decodeTvr(hex) {
+  if (!hex || hex.length < 10) return null;
+  const b = []; for (let i = 0; i < 5; i++) b.push(parseInt(hex.slice(i * 2, i * 2 + 2), 16) || 0);
+  return TVR_BITS.filter(([bi, m]) => b[bi] & m).map(([, , l]) => l);
+}
 
 // Build a lookup context over one card image (aggregating tags across all apps).
 // `crypto` (optional) = { oda, genac } from the live EMV flow, so rules can also
@@ -304,6 +318,12 @@ const RULES = [
     run: (c) => { const v = c.val('9F07'); if (!v || v.length < 2) return NA('9F07 yok'); const d = decodeAuc(v); return d.flags.length ? PASS(`${d.flags.length} kullanım bağlamı`) : WARN(v, 'AUC tümü sıfır — kart hiçbir bağlamda geçerli değil (perso hatası?)'); } },
   { id: 'BIT-05', cat: 'Bit Alanı Kodlama', sev: 'R', spec: 'EMV Bk3 · Ann. C2 (AUC cashback)', req: 'AUC cashback açıksa mal/hizmet kullanımı da açık',
     run: (c) => { const v = c.val('9F07'); if (!v || v.length < 4) return NA('9F07 (2 bayt) yok'); const b1 = parseInt(v.slice(0, 2), 16), b2 = parseInt(v.slice(2, 4), 16); if (!(b2 & 0xC0)) return NA('Cashback bildirilmemiş'); return (b1 & 0x3C) ? PASS('cashback ↔ mal/hizmet ✓') : WARN(v, 'Cashback açık ama mal/hizmet kullanımı kapalı'); } },
+  { id: 'BIT-06', cat: 'Bit Alanı Kodlama', sev: 'R', spec: 'EMV Bk3 · Ann. C5 (IAC/TVR)', req: 'IAC-Denial (9F0F) — offline red koşulları çözümlenir',
+    run: (c) => { const v = c.val('9F0F'); if (!v) return NA('9F0F yok'); if (v.length !== 10) return WARN(v, 'IAC 5 bayt olmalı'); const f = decodeTvr(v); return f.length ? PASS('Offline RED: ' + f.join(' · ')) : PASS('hiçbir koşulda offline red (00…)'); } },
+  { id: 'BIT-07', cat: 'Bit Alanı Kodlama', sev: 'R', spec: 'EMV Bk3 · Ann. C5 (IAC/TVR)', req: 'IAC-Online (9F0E) — online zorlama koşulları çözümlenir',
+    run: (c) => { const v = c.val('9F0E'); if (!v) return NA('9F0E yok'); if (v.length !== 10) return WARN(v, 'IAC 5 bayt olmalı'); const f = decodeTvr(v); return f.length ? PASS('ONLINE zorla: ' + f.join(' · ')) : PASS('hiçbir koşulda online zorlama (00…)'); } },
+  { id: 'BIT-08', cat: 'Bit Alanı Kodlama', sev: 'R', spec: 'EMV Bk3 · Ann. C5 (IAC/TVR)', req: 'IAC-Default (9F0D) — online olunamazsa red koşulları çözümlenir',
+    run: (c) => { const v = c.val('9F0D'); if (!v) return NA('9F0D yok'); if (v.length !== 10) return WARN(v, 'IAC 5 bayt olmalı'); const f = decodeTvr(v); return f.length ? PASS('Online yoksa RED: ' + f.join(' · ')) : PASS('offline onay (00…)'); } },
 
   // ── Mastercard CPV (şema-özel) ─────────────────────────────────────────
   { id: 'MC-01', cat: 'Mastercard CPV', sev: 'M', scheme: 'Mastercard', req: 'Application Version Number (9F08) mevcut',

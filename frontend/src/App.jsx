@@ -134,6 +134,9 @@ function App() {
   const [pinForm, setPinForm] = useState({ keyLabel: '', keyPan: '', newPin: '', mode: 'change', aid: '', pan: '', atc: '', p1: '', p2: '' });
   const [pinBusy, setPinBusy] = useState(false);
   const [pinResult, setPinResult] = useState(null);
+  const [arpcForm, setArpcForm] = useState({ keyLabel: '', keyPan: '', arc: '3030', csu: '03920000', method: 'auto' });
+  const [arpcBusy, setArpcBusy] = useState(false);
+  const [arpcResult, setArpcResult] = useState(null);
   const [verifyForm, setVerifyForm] = useState({ pin: '' });
   const [verifyBusy, setVerifyBusy] = useState(false);
   const [verifyResult, setVerifyResult] = useState(null);
@@ -514,6 +517,29 @@ function App() {
       });
     } catch { setPinResult({ error: 'Backend bağlantısı başarısız' }); }
     setPinBusy(false);
+  };
+
+  // Issuer authentication (ARPC): kartın ARQC'sinden ARPC üret ve karta doğrulat.
+  const runArpc = async () => {
+    setArpcBusy(true); setArpcResult(null);
+    if (!arpcForm.keyLabel) { setArpcResult({ error: 'Anahtar seti seçin' }); setArpcBusy(false); return; }
+    addTrace({ kind: 'event', msg: '═══ Issuer Authentication (ARPC) başlatıldı ═══' });
+    try {
+      const r = await fetch(`${API}/arpc`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(withReader({ ...arpcForm })),
+      });
+      const d = await r.json();
+      setArpcResult(d);
+      (d.steps || []).forEach((s) => addTrace({
+        kind: s.sw === '9000' ? 'ok' : 'warn',
+        apdu: { name: s.name, command: s.command, response: s.response, sw: s.sw, swText: s.swText, tlv: s.tlv, ok: s.sw === '9000' },
+      }));
+      if (d.error) addTrace({ kind: 'error', msg: `ARPC: ${d.error}` });
+      else addTrace({ kind: d.verdict === 'PASS' ? 'ok' : d.verdict === 'FAIL' ? 'error' : 'warn',
+        msg: `ARPC ${d.methodUsed?.toUpperCase()} · ${d.verdict || 'üretildi'}${d.sent ? ` · ${d.sent.cidLabel || d.sent.swText || d.sent.sw}` : ''}` });
+    } catch { setArpcResult({ error: 'Backend bağlantısı başarısız' }); }
+    setArpcBusy(false);
   };
 
   // Verify the card's offline PIN in plaintext (EMV VERIFY 00 20 00 80).
@@ -1204,7 +1230,8 @@ ${apps}
       {activeTab === 'keys' && (
         <KeysTab sessionKeys={sessionKeys} deleteSessionKey={deleteSessionKey}
           keyForm={keyForm} setKeyForm={setKeyForm} addSessionKey={addSessionKey} keyAddResult={keyAddResult}
-          keyEdit={keyEdit} startEditKey={startEditKey} cancelEditKey={cancelEditKey} updateSessionKey={updateSessionKey} />
+          keyEdit={keyEdit} startEditKey={startEditKey} cancelEditKey={cancelEditKey} updateSessionKey={updateSessionKey}
+          arpcForm={arpcForm} setArpcForm={setArpcForm} runArpc={runArpc} arpcBusy={arpcBusy} arpcResult={arpcResult} cardPresent={cardPresent} />
       )}
 
       {activeTab === 'pin' && (

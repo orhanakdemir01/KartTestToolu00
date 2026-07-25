@@ -484,6 +484,86 @@ app.post('/api/pin/change', async (req, res) => {
   }
 });
 
+// POST /api/arpc — bağımsız issuer authentication (ARPC) üretimi + karta doğrulatma.
+// Kartın 1. GENERATE AC (ARQC) sonucundan ARPC üretir (Method 1: 3DES; Method 2:
+// CSU-tabanlı Retail MAC), sonra kartın issuer auth'u KABUL edip etmediğini test
+// eder: Amex EXTERNAL AUTHENTICATE (M1, SW 9000), diğerleri 2. GENERATE AC (M2,
+// CDOL2 tag 91) → CID TC (0x40)=kabul / AAC (0x00)=red. Kartın ARPC/issuer
+// authentication doğrulamasını gerçekten yaptığını kanıtlayan EMV testi.
+app.post('/api/arpc', async (req, res) => {
+  const preferReader = req.body?.reader || undefined;
+  const send = req.body?.send !== false; // varsayılan: karta gönder ve doğrula
+  const { keyLabel, keyPan, aid: aidOv, pan: panOv, psn: psnOv, atc: atcOv, arqc: arqcOv } = req.body || {};
+  const arc = (req.body?.arc || '3030').replace(/\s/g, '').toUpperCase();
+  const csu = (req.body?.csu || '03920000').replace(/\s/g, '').toUpperCase();
+  let methodUsed = (req.body?.method || 'auto').toLowerCase(); // 'auto' | 'm1' | 'm2'
+  const ks = findExact(keyLabel, keyPan || '');
+  if (!ks) return res.status(400).json({ error: 'Anahtar seti bulunamadı — Oturum Anahtarları sekmesinden seçin' });
+
+  try {
+    let ctx = { steps: [] };
+    const cardPresent = usingRealReader() && pcsc.getActiveCard(preferReader)?.connected;
+    if (!(arqcOv && atcOv)) {
+      if (!cardPresent) return res.status(404).json({ error: 'Okuyucuda kart yok (ARQC için gerekli)' });
+      ctx = await discoverCardContext(preferReader);
+      if (ctx.error) return res.status(400).json({ error: ctx.error, steps: ctx.steps });
+    }
+    const aid = (aidOv || ctx.aid || '').replace(/\s/g, '').toUpperCase();
+    const pan = panOv || ctx.pan || ks.pan;
+    const psn = psnOv || ctx.psn || ks.psn;
+    const atc = (atcOv || ctx.atc || '').replace(/\s/g, '').toUpperCase();
+    const arqc = (arqcOv || ctx.arqc || '').replace(/\s/g, '').toUpperCase();
+    if (!arqc) return res.status(400).json({ error: 'ARQC bulunamadı — kartın GENERATE AC ile ARQC üretmesi gerekir', steps: ctx.steps });
+
+    const rid = aid.slice(0, 10);
+    const scheme = rid === 'A000000003' ? 'visa' : rid === 'A000000004' ? 'mastercard'
+      : rid === 'A000000025' ? 'amex' : rid === 'A000000672' ? 'troy'
+      : rid === 'A000000333' ? 'unionpay' : 'unknown';
+    const lvl = ks.keyLevel === 'auto' ? 'master' : ks.keyLevel;
+
+    // Her iki yöntemi de şeffaflık için hesapla (rapor/iz için).
+    const m1 = computeArpc({ acKey: ks.acKey, keyLevel: lvl, pan, psn, atc, arqc, arc });
+    const m2 = computeArpcMethod2({ acKey: ks.acKey, keyLevel: lvl, pan, psn, atc, arqc, csu });
+    // Şemaya göre yöntem: Amex → M1 (EXTERNAL AUTHENTICATE); diğerleri → M2 (2. GEN AC).
+    if (methodUsed === 'auto') methodUsed = scheme === 'amex' ? 'm1' : 'm2';
+
+    const steps = [...(ctx.steps || [])];
+    let sent = null, verdict = null;
+    if (send && cardPresent) {
+      const run = async (name, cmd) => { const { response, sw } = await transmitChain(cmd, preferReader); steps.push({ name, command: cmd, response, sw, swText: describeSw(sw) }); return { response, sw }; };
+      if (methodUsed === 'm1') {
+        const ea = await run('EXTERNAL AUTHENTICATE (ARPC M1)', `00820000${(m1.iad.length / 2).toString(16).padStart(2, '0').toUpperCase()}${m1.iad}`);
+        const accepted = ea.sw === '9000';
+        sent = { method: 'Method 1 (3DES · EXTERNAL AUTHENTICATE)', arpc: m1.arpc, iad: m1.iad, sw: ea.sw, swText: describeSw(ea.sw), accepted };
+        verdict = accepted ? 'PASS' : 'FAIL';
+      } else {
+        const defs = { ...terminalDefaults(), '91': m2.issuerAuthData, '8A': arc };
+        const cdol2Data = ctx.cdol2 ? buildDol(parseDol(ctx.cdol2), defs) : (m2.issuerAuthData + arc);
+        const g2 = await run('GENERATE AC 2 (TC + issuer auth · M2)', `80AE4000${(cdol2Data.length / 2).toString(16).padStart(2, '0').toUpperCase()}${cdol2Data}00`);
+        const n2 = tlvFromResponse(g2.response).nodes;
+        const t80 = findTag(n2, '80');
+        const cid = t80 ? t80.value.replace(/\s/g, '').slice(0, 2) : findTag(n2, '9F27')?.value.replace(/\s/g, '');
+        const acType = cid ? (parseInt(cid, 16) & 0xC0) : null; // 0x40 TC · 0x80 ARQC · 0x00 AAC
+        const accepted = g2.sw === '9000' && acType === 0x40;
+        sent = { method: 'Method 2 (Retail MAC · 2. GENERATE AC)', arpc: m2.arpc, issuerAuthData: m2.issuerAuthData, cid,
+          cidLabel: acType === 0x40 ? 'TC (kabul)' : acType === 0x00 ? 'AAC (red)' : acType === 0x80 ? 'ARQC' : '?',
+          sw: g2.sw, swText: describeSw(g2.sw), accepted };
+        verdict = accepted ? 'PASS' : (acType === 0x00 ? 'FAIL' : 'WARN');
+      }
+    }
+
+    const panMask = pan ? String(pan).replace(/^(\d{6})\d+(\d{4})$/, '$1••••••$2') : null;
+    res.json({
+      scheme, aid, pan: panMask, atc, arqc, arc, csu, keyLabel: ks.label, keyLevel: ks.keyLevel,
+      method1: { name: 'Method 1 — 3DES(SKac, ARQC ⊕ ARC‖00…)', arpc: m1.arpc, iad: m1.iad, sessionKey: m1.sessionKey },
+      method2: { name: 'Method 2 — Retail MAC(SKac, ARQC‖CSU)[:4]', arpc: m2.arpc, issuerAuthData: m2.issuerAuthData, sessionKey: m2.sessionKey },
+      methodUsed, sent, verdict, steps, timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/pin/verify — plaintext offline PIN verification. Selects the AID +
 // GPO (no cryptogram), reads the PIN Try Counter, sends VERIFY (00 20 00 80)
 // with the entered PIN, and reports correct / wrong (tries left) / blocked.

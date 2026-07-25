@@ -1,11 +1,14 @@
-// "Oturum Anahtarları" tab: 3DES session key sets (AC/MAC/ENC) list + add/edit/delete form
+// "Oturum Anahtarları" tab: 3DES session key sets (AC/MAC/ENC) list + add/edit/delete
+// form + Issuer Authentication (ARPC) üretimi/karta doğrulatma paneli.
 export function KeysTab({
   sessionKeys, deleteSessionKey, keyForm, setKeyForm, addSessionKey, keyAddResult,
   keyEdit, startEditKey, cancelEditKey, updateSessionKey,
+  arpcForm, setArpcForm, runArpc, arpcBusy, arpcResult, cardPresent,
 }) {
   const editing = !!keyEdit;
   const set = (patch) => setKeyForm({ ...keyForm, ...patch });
   return (
+    <>
     <section className="panel">
       <div className="panel-head"><h2>Oturum Anahtarları ({sessionKeys.length})</h2></div>
       <p className="muted small">Kriptogram işleme için 3DES anahtarları (AC / MAC / ENC). Anahtar seviyesi: <b>master</b> (issuer MDK → PAN/PSN ile ICC türetilir), <b>icc</b> (ICC anahtarı → ATC ile session), <b>session</b> (doğrudan kullanılır). Satırdaki <b>Düzenle</b> ile mevcut anahtarı değiştirebilirsin.</p>
@@ -74,5 +77,59 @@ export function KeysTab({
         </div>
       </details>
     </section>
+
+    <section className="panel">
+      <div className="panel-head">
+        <h2>Issuer Authentication (ARPC)</h2>
+        {cardPresent ? <span className="chip chip-on">● Kart Bağlı</span> : <span className="chip chip-off">● Kart Yok</span>}
+      </div>
+      <p className="muted small">Kartın <b>ARQC</b>'sinden <b>ARPC</b> üretir (Method 1 · 3DES, EXTERNAL AUTHENTICATE — Amex/legacy · Method 2 · Retail MAC + CSU, 2. GENERATE AC — Mastercard/Visa/Troy) ve kartın issuer authentication'ı <b>kabul edip etmediğini</b> doğrular. Kabul: EXTERNAL AUTH → SW 9000 · 2. GEN AC → CID <b>TC</b> (0x40). EMV Bk2 §8.2.</p>
+      <div className="capk-add">
+        <div className="capk-add-row">
+          <label>Anahtar seti
+            <select value={sessionKeys.findIndex((k) => k.label === arpcForm.keyLabel && (k.pan || '') === (arpcForm.keyPan || ''))}
+              onChange={(e) => { const k = sessionKeys[+e.target.value]; setArpcForm({ ...arpcForm, keyLabel: k?.label || '', keyPan: k?.pan || '' }); }}>
+              <option value={-1}>— seç —</option>
+              {sessionKeys.map((k, i) => <option key={i} value={i}>{k.label}{k.pan ? ` · ${k.pan}` : ' (varsayılan)'}</option>)}
+            </select>
+          </label>
+          <label>Yöntem
+            <select value={arpcForm.method} onChange={(e) => setArpcForm({ ...arpcForm, method: e.target.value })}>
+              <option value="auto">auto (şemaya göre)</option>
+              <option value="m2">Method 2 (2. GEN AC)</option>
+              <option value="m1">Method 1 (EXTERNAL AUTH)</option>
+            </select>
+          </label>
+          <label>ARC<input className="mono" maxLength={4} value={arpcForm.arc} onChange={(e) => setArpcForm({ ...arpcForm, arc: e.target.value })} placeholder="3030" /></label>
+          <label>CSU (M2)<input className="mono" maxLength={8} value={arpcForm.csu} onChange={(e) => setArpcForm({ ...arpcForm, csu: e.target.value })} placeholder="03920000" /></label>
+        </div>
+        <div className="capk-add-row">
+          <button className="btn" disabled={arpcBusy || !cardPresent || !arpcForm.keyLabel} onClick={runArpc}
+            title={!cardPresent ? 'Okuyucuda kart yok' : !arpcForm.keyLabel ? 'Anahtar seti seçin' : undefined}>
+            {arpcBusy ? 'Doğrulanıyor…' : 'ARPC Üret & Karta Doğrulat'}</button>
+          {!cardPresent && <span className="muted small">○ okuyucuda kart yok</span>}
+        </div>
+      </div>
+
+      {arpcResult && (arpcResult.error
+        ? <p className="err-text">✗ {arpcResult.error}</p>
+        : <div className="genac" style={{ marginTop: 10 }}>
+            {arpcResult.verdict && <p className={arpcResult.verdict === 'PASS' ? 'capk-ok' : arpcResult.verdict === 'FAIL' ? 'err-text' : 'oda-partial'} style={{ fontWeight: 600 }}>
+              {arpcResult.verdict === 'PASS' ? '✓ KART ISSUER AUTH KABUL ETTİ' : arpcResult.verdict === 'FAIL' ? '✗ KART REDDETTİ' : '◐ BELİRSİZ'} · {arpcResult.methodUsed?.toUpperCase()}</p>}
+            <div className="oda-info">
+              <span className="oda-chip">{arpcResult.scheme}</span>
+              {arpcResult.pan && <span className="mono small muted">{arpcResult.pan}</span>}
+              <span className="mono small">ATC {arpcResult.atc}</span>
+            </div>
+            <table className="kv-table"><tbody>
+              <tr><td>ARQC (karttan)</td><td className="mono">{arpcResult.arqc}</td></tr>
+              <tr><td>{arpcResult.method1?.name}</td><td className="mono">{arpcResult.method1?.arpc} <span className="muted">· IAD {arpcResult.method1?.iad}</span></td></tr>
+              <tr><td>{arpcResult.method2?.name}</td><td className="mono">{arpcResult.method2?.arpc} <span className="muted">· IAD {arpcResult.method2?.issuerAuthData}</span></td></tr>
+              {arpcResult.sent && <tr><td>Karta gönderilen</td><td className="mono small">{arpcResult.sent.method}{arpcResult.sent.cid ? ` · CID ${arpcResult.sent.cid} (${arpcResult.sent.cidLabel})` : ''} · SW {arpcResult.sent.sw}</td></tr>}
+              <tr><td>Session Key (SKac)</td><td className="mono small muted">{arpcResult.method2?.sessionKey}</td></tr>
+            </tbody></table>
+          </div>)}
+    </section>
+    </>
   );
 }

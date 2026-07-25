@@ -115,11 +115,13 @@ export function KeysTab({
         ? <p className="err-text">✗ {arpcResult.error}</p>
         : <div className="genac" style={{ marginTop: 10 }}>
             {arpcResult.verdict && <p className={arpcResult.verdict === 'PASS' ? 'capk-ok' : arpcResult.verdict === 'FAIL' ? 'err-text' : 'oda-partial'} style={{ fontWeight: 600 }}>
-              {arpcResult.verdict === 'PASS' ? '✓ KART ISSUER AUTH KABUL ETTİ' : arpcResult.verdict === 'FAIL' ? '✗ KART REDDETTİ' : '◐ BELİRSİZ'} · {arpcResult.methodUsed?.toUpperCase()}</p>}
+              {arpcResult.verdict === 'PASS' ? '✓ KART ISSUER AUTH KABUL ETTİ' : arpcResult.verdict === 'FAIL' ? '✗ KART REDDETTİ' : arpcResult.verdict === 'NA' ? '○ UYGULANAMAZ (kart issuer auth bildirmiyor)' : '◐ BELİRSİZ'} · {arpcResult.methodUsed?.toUpperCase()}</p>}
             <div className="oda-info">
               <span className="oda-chip">{arpcResult.scheme}</span>
               {arpcResult.pan && <span className="mono small muted">{arpcResult.pan}</span>}
               <span className="mono small">ATC {arpcResult.atc}</span>
+              {arpcResult.un && <span className="mono small muted">UN {arpcResult.un}</span>}
+              {arpcResult.issuerAuthAdvertised != null && <span className={`oda-chip ${arpcResult.issuerAuthAdvertised ? 'alt' : ''}`}>Issuer Auth: {arpcResult.issuerAuthAdvertised ? 'evet' : 'hayır'}</span>}
             </div>
             <table className="kv-table"><tbody>
               <tr><td>ARQC (karttan)</td><td className="mono">{arpcResult.arqc}</td></tr>

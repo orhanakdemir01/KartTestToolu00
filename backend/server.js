@@ -520,10 +520,16 @@ app.post('/api/arpc', async (req, res) => {
       : rid === 'A000000025' ? 'amex' : rid === 'A000000672' ? 'troy'
       : rid === 'A000000333' ? 'unionpay' : 'unknown';
     const lvl = ks.keyLevel === 'auto' ? 'master' : ks.keyLevel;
+    // Kart AIP'de Issuer Authentication bildiriyor mu? (byte1 bit3 = 0x04). Bildirmiyorsa
+    // kart ARPC'yi DOĞRULAMAZ; 2. GEN AC/EXTERNAL AUTH sonucu issuer auth testi değildir.
+    const aip = (req.body?.aip || ctx.aip || '').replace(/\s/g, '').toUpperCase();
+    const issuerAuthAdvertised = aip.length >= 2 ? !!(parseInt(aip.slice(0, 2), 16) & 0x04) : null;
 
-    // Her iki yöntemi de şeffaflık için hesapla (rapor/iz için).
-    const m1 = computeArpc({ acKey: ks.acKey, keyLevel: lvl, pan, psn, atc, arqc, arc });
-    const m2 = computeArpcMethod2({ acKey: ks.acKey, keyLevel: lvl, pan, psn, atc, arqc, csu });
+    // Her iki yöntemi de şeffaflık için hesapla (rapor/iz için). SKac ŞEMA-FARKINDA:
+    // Mastercard/UnionPay M/Chip UN-tabanlı, Amex ICC MK, diğerleri CSK.
+    const un = (req.body?.un || ctx.un || '').replace(/\s/g, '').toUpperCase();
+    const m1 = computeArpc({ acKey: ks.acKey, keyLevel: lvl, pan, psn, atc, arqc, arc, scheme, un });
+    const m2 = computeArpcMethod2({ acKey: ks.acKey, keyLevel: lvl, pan, psn, atc, arqc, csu, scheme, un });
     // Şemaya göre yöntem: Amex → M1 (EXTERNAL AUTHENTICATE); diğerleri → M2 (2. GEN AC).
     if (methodUsed === 'auto') methodUsed = scheme === 'amex' ? 'm1' : 'm2';
 
@@ -534,8 +540,14 @@ app.post('/api/arpc', async (req, res) => {
       if (methodUsed === 'm1') {
         const ea = await run('EXTERNAL AUTHENTICATE (ARPC M1)', `00820000${(m1.iad.length / 2).toString(16).padStart(2, '0').toUpperCase()}${m1.iad}`);
         const accepted = ea.sw === '9000';
-        sent = { method: 'Method 1 (3DES · EXTERNAL AUTHENTICATE)', arpc: m1.arpc, iad: m1.iad, sw: ea.sw, swText: describeSw(ea.sw), accepted };
-        verdict = accepted ? 'PASS' : 'FAIL';
+        // EXTERNAL AUTHENTICATE'in tek amacı issuer auth: SW 9000 = kesin kabul,
+        // 6300/6983 = kesin ARPC reddi. Kart bu komutu desteklemiyorsa (6D00/6E00) belirsiz.
+        const unsupported = /^6[DE]00$/.test(ea.sw);
+        const note = accepted ? null : (unsupported
+          ? 'Kart EXTERNAL AUTHENTICATE desteklemiyor — bu kart issuer auth\'u 2. GENERATE AC (Method 2) ile yapar.'
+          : 'Kart EXTERNAL AUTHENTICATE\'i reddetti (ARPC doğrulanamadı).');
+        sent = { method: 'Method 1 (3DES · EXTERNAL AUTHENTICATE)', arpc: m1.arpc, iad: m1.iad, sw: ea.sw, swText: describeSw(ea.sw), accepted, note };
+        verdict = accepted ? 'PASS' : (unsupported ? 'WARN' : 'FAIL');
       } else {
         const defs = { ...terminalDefaults(), '91': m2.issuerAuthData, '8A': arc };
         const cdol2Data = ctx.cdol2 ? buildDol(parseDol(ctx.cdol2), defs) : (m2.issuerAuthData + arc);
@@ -545,23 +557,29 @@ app.post('/api/arpc', async (req, res) => {
         const cid = t80 ? t80.value.replace(/\s/g, '').slice(0, 2) : findTag(n2, '9F27')?.value.replace(/\s/g, '');
         const acType = cid ? (parseInt(cid, 16) & 0xC0) : null; // 0x40 TC · 0x80 ARQC · 0x00 AAC
         const accepted = g2.sw === '9000' && acType === 0x40;
-        // AAC, ARPC reddi ANLAMINA GELMEK ZORUNDA DEĞİL: kart AIP'de Issuer Auth
-        // bildirmiyorsa 2. GEN AC kararı risk yönetimine bağlıdır; ayrıca M/Chip
-        // kartlar ARPC için UN-tabanlı session key bekler (bu uç CSK kullanır).
-        // Bu yüzden TC=kesin kabul (PASS), aksi=belirsiz (WARN) — hard FAIL değil.
-        const note = accepted ? null : (acType === 0x00
-          ? 'Kart AAC döndürdü — kesin ARPC reddi değil. Kart AIP\'de Issuer Auth bildirmiyorsa 2. GEN AC kararı risk yönetimidir; M/Chip kartlar UN-tabanlı session key bekler.'
-          : 'Kart TC dışı AC döndürdü — issuer auth kabulü doğrulanamadı.');
+        // Verdikt/not, kartın AIP'de issuer auth bildirip bildirmediğine göre:
+        // - bildirmiyorsa: kart ARPC'yi doğrulamaz → AAC risk-yönetimi kararıdır,
+        //   issuer auth testi geçerli değil (NA/WARN, ARPC reddi DEĞİL).
+        // - bildiriyorsa: TC=kabul (ARPC doğru), AAC=olası ARPC/session uyumsuzluğu.
+        let note = null;
+        if (!accepted) {
+          if (issuerAuthAdvertised === false)
+            note = 'Kart AIP\'de Issuer Authentication bildirmiyor (byte1 bit3=0) → kart ARPC\'yi doğrulamaz; AAC bir risk-yönetimi kararıdır, ARPC reddi DEĞİLDİR. Bu kartta issuer auth testi uygulanamaz.';
+          else if (acType === 0x00)
+            note = 'Kart issuer auth bildiriyor ama AAC döndü — ARPC veya session-key/CSU uyumsuzluğu ya da kart risk kararı olabilir.';
+          else note = 'Kart TC dışı AC döndürdü — issuer auth kabulü doğrulanamadı.';
+        }
         sent = { method: 'Method 2 (Retail MAC · 2. GENERATE AC)', arpc: m2.arpc, issuerAuthData: m2.issuerAuthData, cid,
           cidLabel: acType === 0x40 ? 'TC (kabul)' : acType === 0x00 ? 'AAC (red)' : acType === 0x80 ? 'ARQC' : '?',
           sw: g2.sw, swText: describeSw(g2.sw), accepted, note };
-        verdict = accepted ? 'PASS' : 'WARN';
+        // Issuer auth bildirmeyen kartta AAC → NA (test uygulanamaz), aksi WARN.
+        verdict = accepted ? 'PASS' : (issuerAuthAdvertised === false ? 'NA' : 'WARN');
       }
     }
 
     const panMask = pan ? String(pan).replace(/^(\d{6})\d+(\d{4})$/, '$1••••••$2') : null;
     res.json({
-      scheme, aid, pan: panMask, atc, arqc, arc, csu, keyLabel: ks.label, keyLevel: ks.keyLevel,
+      scheme, aid, pan: panMask, atc, arqc, un, aip: aip || null, issuerAuthAdvertised, arc, csu, keyLabel: ks.label, keyLevel: ks.keyLevel,
       method1: { name: 'Method 1 — 3DES(SKac, ARQC ⊕ ARC‖00…)', arpc: m1.arpc, iad: m1.iad, sessionKey: m1.sessionKey },
       method2: { name: 'Method 2 — Retail MAC(SKac, ARQC‖CSU)[:4]', arpc: m2.arpc, issuerAuthData: m2.issuerAuthData, sessionKey: m2.sessionKey },
       methodUsed, sent, verdict, steps, timestamp: new Date().toISOString(),

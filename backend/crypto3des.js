@@ -131,6 +131,20 @@ function sessionKeyFor(acKey, keyLevel, pan, psn, atc) {
   return { sk: acKey, iccMk: null };
 }
 
+// ARPC/AC session key (SKac) — ŞEMA-FARKINDA. ARPC, ARQC ile AYNI SKac'ı kullanmalı;
+// SKac türetimi şemaya göre değişir: Mastercard/UnionPay M/Chip UN-tabanlı
+// (deriveSessionKeyMChip), Amex CVN01 ICC Master Key doğrudan, diğerleri (Visa/Troy/
+// CCD) EMV CSK. Şema verilmezse CSK (geriye dönük uyumlu, mevcut davranış).
+function skacFor({ acKey, keyLevel, pan, psn, atc, scheme, un }) {
+  const lvl = keyLevel === 'auto' ? 'master' : keyLevel;
+  const s = (scheme || '').toLowerCase();
+  const iccMk = lvl === 'master' ? deriveIccMasterKey(acKey, pan, psn) : (lvl === 'icc' ? acKey : null);
+  if ((s === 'mastercard' || s === 'unionpay') && iccMk) return deriveSessionKeyMChip(iccMk, atc, un || '');
+  if (s === 'amex' && iccMk) return iccMk;
+  const { sk } = sessionKeyFor(acKey, lvl, pan, psn, atc);
+  return typeof sk === 'string' ? sk : hex(sk);
+}
+
 // ICC master key for an AC key at a given level (for M/Chip session derivation).
 function iccMkFor(acKey, keyLevel, pan, psn) {
   if (keyLevel === 'master') return deriveIccMasterKey(acKey, pan, psn);
@@ -150,10 +164,8 @@ export function computeArqc({ acKey, keyLevel, pan, psn, atc, inputDataHex }) {
 // SKac is the same AC session key used for the ARQC and ARC is the 2-byte
 // Authorization Response Code. Returns the ARPC and the Issuer Authentication
 // Data (ARPC || ARC) to place in the EXTERNAL AUTHENTICATE command.
-export function computeArpc({ acKey, keyLevel, pan, psn, atc, arqc, arc = '3030' }) {
-  const lvl = keyLevel === 'auto' ? 'master' : keyLevel;
-  const { sk } = sessionKeyFor(acKey, lvl, pan, psn, atc);
-  const skHex = typeof sk === 'string' ? sk : hex(sk);
+export function computeArpc({ acKey, keyLevel, pan, psn, atc, arqc, arc = '3030', scheme, un }) {
+  const skHex = skacFor({ acKey, keyLevel, pan, psn, atc, scheme, un });
   const arqcB = buf(arqc);
   const arcPad = buf((((arc || '').replace(/\s/g, '')) + '000000000000').slice(0, 16)); // 8 bytes
   const x = Buffer.from(arqcB.map((b, i) => b ^ (arcPad[i] || 0)));
@@ -166,10 +178,8 @@ export function computeArpc({ acKey, keyLevel, pan, psn, atc, arqc, arc = '3030'
 // (Card Status Update, 4 bytes) is the issuer response. The ARPC + CSU is the
 // Issuer Authentication Data (tag 91) placed in the 2nd GENERATE AC (CDOL2).
 // Verified byte-exact against a FIME Visa "Verify AC and Generate ARPC" trace.
-export function computeArpcMethod2({ acKey, keyLevel, pan, psn, atc, arqc, csu = '03920000', propAuth = '' }) {
-  const lvl = keyLevel === 'auto' ? 'master' : keyLevel;
-  const { sk } = sessionKeyFor(acKey, lvl, pan, psn, atc);
-  const skHex = typeof sk === 'string' ? sk : hex(sk);
+export function computeArpcMethod2({ acKey, keyLevel, pan, psn, atc, arqc, csu = '03920000', propAuth = '', scheme, un }) {
+  const skHex = skacFor({ acKey, keyLevel, pan, psn, atc, scheme, un });
   const c = (csu || '').replace(/\s/g, '').toUpperCase();
   const q = (arqc || '').replace(/\s/g, '').toUpperCase();
   const p = (propAuth || '').replace(/\s/g, '').toUpperCase();

@@ -84,6 +84,8 @@ export async function discoverCardContext(preferReader, opts = {}) {
   const t80 = findTag(gpo.tlv.nodes, '80');
   if (t80) aflHex = t80.value.replace(/\s/g, '').slice(4);
   else { const t94 = findTag(gpo.tlv.nodes, '94'); if (t94) aflHex = t94.value.replace(/\s/g, ''); }
+  // AIP: format-1 (tag 80) → ilk 2 bayt; format-2 (tag 77) → tag 82.
+  const aipHex = t80 ? t80.value.replace(/\s/g, '').slice(0, 4) : (findTag(gpo.tlv.nodes, '82')?.value.replace(/\s/g, '') || null);
 
   const collected = [];
   if (aflHex) {
@@ -152,5 +154,5 @@ export async function discoverCardContext(preferReader, opts = {}) {
   const un = terminalDefaults()['9F37'] || '';
   // CDOL2 (tag 8D) — for the 2nd GENERATE AC in the Visa issuer-authentication flow.
   const cdol2 = findTag(collected, '8D')?.value.replace(/\s/g, '') || '';
-  return { steps, applications, aid, label, pan, psn, atc, arqc, un, cdol2, atcSource, aidSelected: true };
+  return { steps, applications, aid, label, pan, psn, atc, arqc, un, cdol2, aip: aipHex, atcSource, aidSelected: true };
 }

@@ -83,7 +83,7 @@ export function KeysTab({
         <h2>Issuer Authentication (ARPC)</h2>
         {cardPresent ? <span className="chip chip-on">● Kart Bağlı</span> : <span className="chip chip-off">● Kart Yok</span>}
       </div>
-      <p className="muted small">Kartın <b>ARQC</b>'sinden <b>ARPC</b> üretir (Method 1 · 3DES, EXTERNAL AUTHENTICATE — Amex/legacy · Method 2 · Retail MAC + CSU, 2. GENERATE AC — Mastercard/Visa/Troy) ve kartın issuer authentication'ı <b>kabul edip etmediğini</b> doğrular. Kabul: EXTERNAL AUTH → SW 9000 · 2. GEN AC → CID <b>TC</b> (0x40). EMV Bk2 §8.2.</p>
+      <p className="muted small">Kartın <b>ARQC</b>'sinden <b>ARPC</b> üretir (Method 1 · 3DES, EXTERNAL AUTHENTICATE — Amex · Method 2 · Retail MAC + CSU, 2. GENERATE AC — Visa/MC/Troy) ve issuer authentication'ı <b>diferansiyel testle</b> doğrular: <b>doğru</b> ARPC kabul (TC) <b>ve bozuk</b> ARPC red (AAC) ⇒ kart ARPC'yi kriptografik doğruluyor (PASS). Bozuk ARPC de TC alırsa kart doğrulamıyor (NA). Bu, AIP bildirimine güvenmeyen altın-standart negatif testtir. SKac şema-farkında (M/Chip UN-tabanlı / CSK). EMV Bk2 §8.2.</p>
       <div className="capk-add">
         <div className="capk-add-row">
           <label>Anahtar seti
@@ -127,7 +127,8 @@ export function KeysTab({
               <tr><td>ARQC (karttan)</td><td className="mono">{arpcResult.arqc}</td></tr>
               <tr><td>{arpcResult.method1?.name}</td><td className="mono">{arpcResult.method1?.arpc} <span className="muted">· IAD {arpcResult.method1?.iad}</span></td></tr>
               <tr><td>{arpcResult.method2?.name}</td><td className="mono">{arpcResult.method2?.arpc} <span className="muted">· IAD {arpcResult.method2?.issuerAuthData}</span></td></tr>
-              {arpcResult.sent && <tr><td>Karta gönderilen</td><td className="mono small">{arpcResult.sent.method}{arpcResult.sent.cid ? ` · CID ${arpcResult.sent.cid} (${arpcResult.sent.cidLabel})` : ''} · SW {arpcResult.sent.sw}</td></tr>}
+              {arpcResult.sent && <tr><td>Doğru ARPC → kart</td><td className="mono small">{arpcResult.sent.method}{arpcResult.sent.cid ? ` · CID ${arpcResult.sent.cid} (${arpcResult.sent.cidLabel})` : ''} · SW {arpcResult.sent.sw}</td></tr>}
+              {arpcResult.negative && !arpcResult.negative.error && <tr><td>Bozuk ARPC → kart <span className="muted">(negatif test)</span></td><td className="mono small">CID {arpcResult.negative.cid} ({arpcResult.negative.cidLabel}) · SW {arpcResult.negative.sw} · {arpcResult.negative.rejected ? '✓ reddetti' : '✗ reddetmedi'}</td></tr>}
               {arpcResult.sent?.note && <tr><td>Not</td><td className="muted small">{arpcResult.sent.note}</td></tr>}
               <tr><td>Session Key (SKac)</td><td className="mono small muted">{arpcResult.method2?.sessionKey}</td></tr>
             </tbody></table>

@@ -496,93 +496,104 @@ app.post('/api/arpc', async (req, res) => {
   const { keyLabel, keyPan, aid: aidOv, pan: panOv, psn: psnOv, atc: atcOv, arqc: arqcOv } = req.body || {};
   const arc = (req.body?.arc || '3030').replace(/\s/g, '').toUpperCase();
   const csu = (req.body?.csu || '03920000').replace(/\s/g, '').toUpperCase();
-  let methodUsed = (req.body?.method || 'auto').toLowerCase(); // 'auto' | 'm1' | 'm2'
+  const methodReq = (req.body?.method || 'auto').toLowerCase(); // 'auto' | 'm1' | 'm2'
+  const explicitCorrupt = req.body?.corrupt === true;
+  // Diferansiyel test (varsayılan, M2): doğru ARPC (TC bekle) + bozuk ARPC (AAC bekle).
+  // Bu, kartın issuer auth'u GERÇEKTEN doğruladığını kanıtlar — AIP bitine güvenmez.
+  const wantDifferential = req.body?.differential !== false && !explicitCorrupt;
   const ks = findExact(keyLabel, keyPan || '');
   if (!ks) return res.status(400).json({ error: 'Anahtar seti bulunamadı — Oturum Anahtarları sekmesinden seçin' });
+  const cardPresent = usingRealReader() && pcsc.getActiveCard(preferReader)?.connected;
+  const flip1 = (h) => ((parseInt(h.slice(0, 2), 16) ^ 0xFF).toString(16).padStart(2, '0') + h.slice(2)).toUpperCase();
 
-  try {
+  // Tek bir ARPC turu: taze keşif (ARQC/ATC) + ARPC hesabı + (opsiyonel) karta gönder.
+  async function arpcRound(corrupt) {
+    const steps = [];
+    const run = async (name, cmd) => { const { response, sw } = await transmitChain(cmd, preferReader); steps.push({ name, command: cmd, response, sw, swText: describeSw(sw) }); return { response, sw }; };
     let ctx = { steps: [] };
-    const cardPresent = usingRealReader() && pcsc.getActiveCard(preferReader)?.connected;
-    if (!(arqcOv && atcOv)) {
-      if (!cardPresent) return res.status(404).json({ error: 'Okuyucuda kart yok (ARQC için gerekli)' });
-      ctx = await discoverCardContext(preferReader);
-      if (ctx.error) return res.status(400).json({ error: ctx.error, steps: ctx.steps });
-    }
+    if (!(arqcOv && atcOv)) { ctx = await discoverCardContext(preferReader); if (ctx.error) return { error: ctx.error, steps: ctx.steps }; }
     const aid = (aidOv || ctx.aid || '').replace(/\s/g, '').toUpperCase();
-    const pan = panOv || ctx.pan || ks.pan;
-    const psn = psnOv || ctx.psn || ks.psn;
+    const pan = panOv || ctx.pan || ks.pan, psn = psnOv || ctx.psn || ks.psn;
     const atc = (atcOv || ctx.atc || '').replace(/\s/g, '').toUpperCase();
     const arqc = (arqcOv || ctx.arqc || '').replace(/\s/g, '').toUpperCase();
-    if (!arqc) return res.status(400).json({ error: 'ARQC bulunamadı — kartın GENERATE AC ile ARQC üretmesi gerekir', steps: ctx.steps });
-
+    const un = (req.body?.un || ctx.un || '').replace(/\s/g, '').toUpperCase();
+    const aip = (req.body?.aip || ctx.aip || '').replace(/\s/g, '').toUpperCase();
     const rid = aid.slice(0, 10);
     const scheme = rid === 'A000000003' ? 'visa' : rid === 'A000000004' ? 'mastercard'
       : rid === 'A000000025' ? 'amex' : rid === 'A000000672' ? 'troy'
       : rid === 'A000000333' ? 'unionpay' : 'unknown';
     const lvl = ks.keyLevel === 'auto' ? 'master' : ks.keyLevel;
-    // Kart AIP'de Issuer Authentication bildiriyor mu? (byte1 bit3 = 0x04). Bildirmiyorsa
-    // kart ARPC'yi DOĞRULAMAZ; 2. GEN AC/EXTERNAL AUTH sonucu issuer auth testi değildir.
-    const aip = (req.body?.aip || ctx.aip || '').replace(/\s/g, '').toUpperCase();
-    const issuerAuthAdvertised = aip.length >= 2 ? !!(parseInt(aip.slice(0, 2), 16) & 0x04) : null;
-
-    // Her iki yöntemi de şeffaflık için hesapla (rapor/iz için). SKac ŞEMA-FARKINDA:
-    // Mastercard/UnionPay M/Chip UN-tabanlı, Amex ICC MK, diğerleri CSK.
-    const un = (req.body?.un || ctx.un || '').replace(/\s/g, '').toUpperCase();
+    if (!arqc) return { error: 'ARQC bulunamadı — kartın GENERATE AC ile ARQC üretmesi gerekir', steps: [...(ctx.steps || []), ...steps] };
     const m1 = computeArpc({ acKey: ks.acKey, keyLevel: lvl, pan, psn, atc, arqc, arc, scheme, un });
     const m2 = computeArpcMethod2({ acKey: ks.acKey, keyLevel: lvl, pan, psn, atc, arqc, csu, scheme, un });
-    // Şemaya göre yöntem: Amex → M1 (EXTERNAL AUTHENTICATE); diğerleri → M2 (2. GEN AC).
-    if (methodUsed === 'auto') methodUsed = scheme === 'amex' ? 'm1' : 'm2';
-
-    const steps = [...(ctx.steps || [])];
-    let sent = null, verdict = null;
+    const mUsed = methodReq === 'auto' ? (scheme === 'amex' ? 'm1' : 'm2') : methodReq;
+    const out = { aid, scheme, pan, psn, atc, arqc, un, aip, m1, m2, mUsed, cid: null, acType: null, sw: null, sentIad: null };
     if (send && cardPresent) {
-      const run = async (name, cmd) => { const { response, sw } = await transmitChain(cmd, preferReader); steps.push({ name, command: cmd, response, sw, swText: describeSw(sw) }); return { response, sw }; };
-      if (methodUsed === 'm1') {
+      if (mUsed === 'm1') {
         const ea = await run('EXTERNAL AUTHENTICATE (ARPC M1)', `00820000${(m1.iad.length / 2).toString(16).padStart(2, '0').toUpperCase()}${m1.iad}`);
-        const accepted = ea.sw === '9000';
-        // EXTERNAL AUTHENTICATE'in tek amacı issuer auth: SW 9000 = kesin kabul,
-        // 6300/6983 = kesin ARPC reddi. Kart bu komutu desteklemiyorsa (6D00/6E00) belirsiz.
-        const unsupported = /^6[DE]00$/.test(ea.sw);
-        const note = accepted ? null : (unsupported
-          ? 'Kart EXTERNAL AUTHENTICATE desteklemiyor — bu kart issuer auth\'u 2. GENERATE AC (Method 2) ile yapar.'
-          : 'Kart EXTERNAL AUTHENTICATE\'i reddetti (ARPC doğrulanamadı).');
-        sent = { method: 'Method 1 (3DES · EXTERNAL AUTHENTICATE)', arpc: m1.arpc, iad: m1.iad, sw: ea.sw, swText: describeSw(ea.sw), accepted, note };
-        verdict = accepted ? 'PASS' : (unsupported ? 'WARN' : 'FAIL');
+        out.sw = ea.sw; out.eaAccepted = ea.sw === '9000'; out.sentIad = m1.iad;
       } else {
-        const defs = { ...terminalDefaults(), '91': m2.issuerAuthData, '8A': arc };
-        const cdol2Data = ctx.cdol2 ? buildDol(parseDol(ctx.cdol2), defs) : (m2.issuerAuthData + arc);
-        const g2 = await run('GENERATE AC 2 (TC + issuer auth · M2)', `80AE4000${(cdol2Data.length / 2).toString(16).padStart(2, '0').toUpperCase()}${cdol2Data}00`);
+        const iad91 = corrupt ? flip1(m2.issuerAuthData) : m2.issuerAuthData;
+        const defs = { ...terminalDefaults(), '91': iad91, '8A': arc };
+        const cdol2Data = ctx.cdol2 ? buildDol(parseDol(ctx.cdol2), defs) : (iad91 + arc);
+        const g2 = await run(`GENERATE AC 2 (issuer auth · M2${corrupt ? ' · BOZUK ARPC' : ''})`, `80AE4000${(cdol2Data.length / 2).toString(16).padStart(2, '0').toUpperCase()}${cdol2Data}00`);
         const n2 = tlvFromResponse(g2.response).nodes;
         const t80 = findTag(n2, '80');
-        const cid = t80 ? t80.value.replace(/\s/g, '').slice(0, 2) : findTag(n2, '9F27')?.value.replace(/\s/g, '');
-        const acType = cid ? (parseInt(cid, 16) & 0xC0) : null; // 0x40 TC · 0x80 ARQC · 0x00 AAC
-        const accepted = g2.sw === '9000' && acType === 0x40;
-        // Verdikt/not, kartın AIP'de issuer auth bildirip bildirmediğine göre:
-        // - bildirmiyorsa: kart ARPC'yi doğrulamaz → AAC risk-yönetimi kararıdır,
-        //   issuer auth testi geçerli değil (NA/WARN, ARPC reddi DEĞİL).
-        // - bildiriyorsa: TC=kabul (ARPC doğru), AAC=olası ARPC/session uyumsuzluğu.
-        let note = null;
-        if (!accepted) {
-          if (issuerAuthAdvertised === false)
-            note = 'Kart AIP\'de Issuer Authentication bildirmiyor (byte1 bit3=0) → kart ARPC\'yi doğrulamaz; AAC bir risk-yönetimi kararıdır, ARPC reddi DEĞİLDİR. Bu kartta issuer auth testi uygulanamaz.';
-          else if (acType === 0x00)
-            note = 'Kart issuer auth bildiriyor ama AAC döndü — ARPC veya session-key/CSU uyumsuzluğu ya da kart risk kararı olabilir.';
-          else note = 'Kart TC dışı AC döndürdü — issuer auth kabulü doğrulanamadı.';
-        }
-        sent = { method: 'Method 2 (Retail MAC · 2. GENERATE AC)', arpc: m2.arpc, issuerAuthData: m2.issuerAuthData, cid,
-          cidLabel: acType === 0x40 ? 'TC (kabul)' : acType === 0x00 ? 'AAC (red)' : acType === 0x80 ? 'ARQC' : '?',
-          sw: g2.sw, swText: describeSw(g2.sw), accepted, note };
-        // Issuer auth bildirmeyen kartta AAC → NA (test uygulanamaz), aksi WARN.
-        verdict = accepted ? 'PASS' : (issuerAuthAdvertised === false ? 'NA' : 'WARN');
+        out.cid = t80 ? t80.value.replace(/\s/g, '').slice(0, 2) : findTag(n2, '9F27')?.value.replace(/\s/g, '');
+        out.acType = out.cid ? (parseInt(out.cid, 16) & 0xC0) : null; out.sw = g2.sw; out.sentIad = iad91;
+      }
+    }
+    out.steps = [...(ctx.steps || []), ...steps];
+    return out;
+  }
+
+  try {
+    if (!cardPresent && !(arqcOv && atcOv)) return res.status(404).json({ error: 'Okuyucuda kart yok (ARQC için gerekli)' });
+    const cidLabel = (t) => t === 0x40 ? 'TC' : t === 0x00 ? 'AAC' : t === 0x80 ? 'ARQC' : '?';
+
+    const r1 = await arpcRound(explicitCorrupt); // ilk tur (açıkça istenmedikçe DOĞRU ARPC)
+    if (r1.error) return res.status(400).json({ error: r1.error, steps: r1.steps });
+
+    let verdict = null, sent = null, negative = null, steps = r1.steps;
+    if (send && cardPresent && r1.mUsed === 'm1') {
+      // Amex EXTERNAL AUTHENTICATE tek başına doğrulayıcıdır: SW 9000 = ARPC kabul.
+      const acc = r1.eaAccepted, unsupported = /^6[DE]00$/.test(r1.sw);
+      sent = { method: 'Method 1 (3DES · EXTERNAL AUTHENTICATE)', arpc: r1.m1.arpc, iad: r1.sentIad, sw: r1.sw, swText: describeSw(r1.sw), accepted: acc,
+        note: acc ? null : (unsupported ? 'Kart EXTERNAL AUTHENTICATE desteklemiyor — issuer auth 2. GENERATE AC ile yapılır.' : 'Kart EXTERNAL AUTHENTICATE\'i reddetti (ARPC doğrulanamadı).') };
+      verdict = acc ? 'PASS' : (unsupported ? 'WARN' : 'FAIL');
+    } else if (send && cardPresent) {
+      const tc1 = r1.sw === '9000' && r1.acType === 0x40;
+      sent = { method: `Method 2 (Retail MAC · 2. GENERATE AC)${explicitCorrupt ? ' · negatif test' : ''}`, arpc: r1.m2.arpc,
+        issuerAuthData: r1.m2.issuerAuthData, sentIssuerAuthData: r1.sentIad, cid: r1.cid, cidLabel: cidLabel(r1.acType),
+        sw: r1.sw, swText: describeSw(r1.sw), accepted: tc1, note: null };
+      if (explicitCorrupt) {
+        // Tek atış negatif test: bozuk ARPC reddedilmeli (AAC).
+        verdict = r1.acType === 0x00 ? 'PASS' : 'FAIL';
+        sent.note = r1.acType === 0x00 ? 'Negatif test ✓ — kart bozuk ARPC\'yi reddetti (AAC).' : 'Negatif test ✗ — kart bozuk ARPC\'ye rağmen TC döndü → ARPC\'yi doğrulamıyor.';
+      } else if (wantDifferential) {
+        // Diferansiyel: ikinci tur BOZUK ARPC ile. Kesin issuer-auth kanıtı, AIP'den bağımsız.
+        const r2 = await arpcRound(true);
+        steps = [...steps, ...(r2.steps || [])];
+        negative = r2.error ? { error: r2.error } : { cid: r2.cid, cidLabel: cidLabel(r2.acType), sw: r2.sw, sentIssuerAuthData: r2.sentIad, rejected: r2.acType === 0x00 };
+        const negAac = !r2.error && r2.acType === 0x00;
+        if (tc1 && negAac) { verdict = 'PASS'; sent.note = 'Diferansiyel ✓ — doğru ARPC kabul (TC), bozuk ARPC red (AAC): kart issuer authentication\'ı KRİPTOGRAFİK olarak doğruluyor.'; }
+        else if (tc1 && !r2.error && r2.acType === 0x40) { verdict = 'NA'; sent.note = 'Kart bozuk ARPC\'ye de TC döndü → ARPC\'yi doğrulamıyor; TC yalnızca risk-onay kararıdır (issuer auth uygulanmıyor).'; }
+        else if (!tc1) { verdict = 'WARN'; sent.note = `Kart doğru ARPC'ye ${cidLabel(r1.acType)} döndü — anahtar/session/CSU uyumsuzluğu ya da risk kararı olabilir.`; }
+        else { verdict = 'WARN'; sent.note = 'Diferansiyel sonuç belirsiz.'; }
+      } else {
+        verdict = tc1 ? 'PASS' : 'WARN';
+        sent.note = tc1 ? 'TC — kesin kanıt için diferansiyel/negatif test önerilir (bozuk ARPC reddi).' : `Kart ${cidLabel(r1.acType)} döndü.`;
       }
     }
 
-    const panMask = pan ? String(pan).replace(/^(\d{6})\d+(\d{4})$/, '$1••••••$2') : null;
+    const panMask = r1.pan ? String(r1.pan).replace(/^(\d{6})\d+(\d{4})$/, '$1••••••$2') : null;
     res.json({
-      scheme, aid, pan: panMask, atc, arqc, un, aip: aip || null, issuerAuthAdvertised, arc, csu, keyLabel: ks.label, keyLevel: ks.keyLevel,
-      method1: { name: 'Method 1 — 3DES(SKac, ARQC ⊕ ARC‖00…)', arpc: m1.arpc, iad: m1.iad, sessionKey: m1.sessionKey },
-      method2: { name: 'Method 2 — Retail MAC(SKac, ARQC‖CSU)[:4]', arpc: m2.arpc, issuerAuthData: m2.issuerAuthData, sessionKey: m2.sessionKey },
-      methodUsed, sent, verdict, steps, timestamp: new Date().toISOString(),
+      scheme: r1.scheme, aid: r1.aid, pan: panMask, atc: r1.atc, arqc: r1.arqc, un: r1.un, aip: r1.aip || null,
+      issuerAuthAdvertised: r1.aip && r1.aip.length >= 2 ? !!(parseInt(r1.aip.slice(0, 2), 16) & 0x04) : null,
+      arc, csu, keyLabel: ks.label, keyLevel: ks.keyLevel, differential: wantDifferential && r1.mUsed === 'm2',
+      method1: { name: 'Method 1 — 3DES(SKac, ARQC ⊕ ARC‖00…)', arpc: r1.m1.arpc, iad: r1.m1.iad, sessionKey: r1.m1.sessionKey },
+      method2: { name: 'Method 2 — Retail MAC(SKac, ARQC‖CSU)[:4]', arpc: r1.m2.arpc, issuerAuthData: r1.m2.issuerAuthData, sessionKey: r1.m2.sessionKey },
+      methodUsed: r1.mUsed, sent, negative, verdict, steps, timestamp: new Date().toISOString(),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

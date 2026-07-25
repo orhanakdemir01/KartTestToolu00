@@ -118,6 +118,7 @@ export async function discoverCardContext(preferReader, opts = {}) {
     atc = g.ok ? (findTag(tlvFromResponse(g.response).nodes, '9F36')?.value || null) : null;
     if (atc) atcSource = 'GET DATA';
   }
+  let cdol1Hex = null, iadHex = null; // ARQC doğrulaması için (verifyArqcAuto)
   if (!opts.skipCrypto && (!atc || !arqc)) {
     // Contact M/Chip cards expose the ATC/ARQC only through a cryptogram. Do a
     // GENERATE AC (ARQC) with CDOL1 — this also mirrors the real issuer-script
@@ -126,6 +127,7 @@ export async function discoverCardContext(preferReader, opts = {}) {
     const t8C = findTag(collected, '8C');
     if (t8C && t8C.value) {
       const cdolData = buildDol(parseDol(t8C.value), terminalDefaults());
+      cdol1Hex = cdolData; // ARQC girdisi (verifyArqcAuto için base/cdol)
       // Troy D-PAS keys its PIN-change secure messaging off an AAC (P1=00,
       // offline decline) — an online ARQC (P1=80) leaves the card expecting
       // issuer authentication and the script is refused (6985). Its ATC comes
@@ -139,10 +141,12 @@ export async function discoverCardContext(preferReader, opts = {}) {
           const v = t80ac.value.replace(/\s/g, '');
           atc = isTroy ? v.slice(2, 6) : (atc || v.slice(2, 6));
           arqc = arqc || v.slice(6, 22);
+          if (v.length > 22) iadHex = v.slice(22); // format-1: CID+ATC+AC ardından IAD
         } else {
           const gacAtc = findTag(ac.tlv.nodes, '9F36')?.value.replace(/\s/g, '') || null;
           atc = isTroy ? (gacAtc || atc) : (atc || gacAtc);
           arqc = arqc || (findTag(ac.tlv.nodes, '9F26')?.value.replace(/\s/g, '') || null);
+          iadHex = findTag(ac.tlv.nodes, '9F10')?.value.replace(/\s/g, '') || iadHex;
         }
         if (!atcSource && atc) atcSource = 'GENERATE AC';
       }
@@ -154,5 +158,6 @@ export async function discoverCardContext(preferReader, opts = {}) {
   const un = terminalDefaults()['9F37'] || '';
   // CDOL2 (tag 8D) — for the 2nd GENERATE AC in the Visa issuer-authentication flow.
   const cdol2 = findTag(collected, '8D')?.value.replace(/\s/g, '') || '';
-  return { steps, applications, aid, label, pan, psn, atc, arqc, un, cdol2, aip: aipHex, atcSource, aidSelected: true };
+  if (!iadHex) iadHex = findTag(collected, '9F10')?.value.replace(/\s/g, '') || null;
+  return { steps, applications, aid, label, pan, psn, atc, arqc, un, cdol2, aip: aipHex, cdol1: cdol1Hex, iad: iadHex, atcSource, aidSelected: true };
 }

@@ -122,6 +122,7 @@ export function KeysTab({
               <span className="mono small">ATC {arpcResult.atc}</span>
               {arpcResult.un && <span className="mono small muted">UN {arpcResult.un}</span>}
               {arpcResult.issuerAuthAdvertised != null && <span className={`oda-chip ${arpcResult.issuerAuthAdvertised ? 'alt' : ''}`}>Issuer Auth: {arpcResult.issuerAuthAdvertised ? 'evet' : 'hayır'}</span>}
+              {arpcResult.arqcVerified != null && <span className={arpcResult.arqcVerified ? 'st-ok' : 'st-warn'}>{arpcResult.arqcVerified ? '✓ ARQC doğrulandı' : '○ ARQC doğrulanamadı'}</span>}
             </div>
             <table className="kv-table"><tbody>
               <tr><td>ARQC (karttan)</td><td className="mono">{arpcResult.arqc}</td></tr>

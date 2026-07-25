@@ -12,7 +12,7 @@ import { runEmvRead, runEmvFlow } from './emvflow.js';
 import { interpretUid } from './emv.js';
 import { BUILTIN_SUITES, swMatch } from './testsuites.js';
 import { listKeys, keysForRid, findKey, schemes, verifyKey, addKey, updateKey, deleteKey } from './capk.js';
-import { computeArpc, computeArpcMethod2, deriveIccMasterKey } from './crypto3des.js';
+import { computeArpc, computeArpcMethod2, deriveIccMasterKey, verifyArqcAuto } from './crypto3des.js';
 import { listKeysMasked, addKeySet, updateKeySet, deleteKeySet, getKeySet, findExact } from './sessionkeys.js';
 import { buildPinChange, buildUnblockVariants, buildVerifyPlaintext } from './changepin.js';
 import { discoverCardContext } from './carddiscover.js';
@@ -524,20 +524,35 @@ app.post('/api/arpc', async (req, res) => {
       : rid === 'A000000333' ? 'unionpay' : 'unknown';
     const lvl = ks.keyLevel === 'auto' ? 'master' : ks.keyLevel;
     if (!arqc) return { error: 'ARQC bulunamadı — kartın GENERATE AC ile ARQC üretmesi gerekir', steps: [...(ctx.steps || []), ...steps] };
-    const m1 = computeArpc({ acKey: ks.acKey, keyLevel: lvl, pan, psn, atc, arqc, arc, scheme, un });
-    const m2 = computeArpcMethod2({ acKey: ks.acKey, keyLevel: lvl, pan, psn, atc, arqc, csu, scheme, un });
+    // ARQC'yi doğrula → kartın gerçekten kullandığı SKac'ı bul. ARPC AYNI SKac ile
+    // hesaplanmalı (EMV Bk2 §8.2). Bu, şema/CVN-özel session-key türetimini otomatik
+    // çözer (M/Chip UN-tabanlı, Visa CSK, CVN10 UDK-direct...) — tahmin yok.
+    const td = terminalDefaults();
+    // base = standart AC veri kompozisyonu (emvflow ile aynı); cdol = ham CDOL1 verisi.
+    const base = td['9F02'] + td['9F03'] + td['9F1A'] + td['95'] + td['5F2A'] + td['9A'] + td['9C'] + td['9F37'];
+    const av = verifyArqcAuto({ acKey: ks.acKey, keyLevel: lvl, pan, psn, atc, un,
+      base, cdol: ctx.cdol1 || '', aip, iad: ctx.iad || '', cardArqc: arqc, aid,
+      amount: td['9F02'], currency: td['5F2A'] });
+    const skac = av && av.match ? av.sessionKey : null;
+    // SKac doğrulandıysa onu doğrudan (session seviyesi) kullan; yoksa şema-farkında tahmin.
+    const m1 = skac ? computeArpc({ acKey: skac, keyLevel: 'session', arqc, arc })
+      : computeArpc({ acKey: ks.acKey, keyLevel: lvl, pan, psn, atc, arqc, arc, scheme, un });
+    const m2 = skac ? computeArpcMethod2({ acKey: skac, keyLevel: 'session', arqc, csu })
+      : computeArpcMethod2({ acKey: ks.acKey, keyLevel: lvl, pan, psn, atc, arqc, csu, scheme, un });
+    // M/Chip (Mastercard/UnionPay) ARPC = Method 1 (3DES, ARQC⊕ARC) — paymentcardtools
+    // CVN10 ref + EMV Bk2 §8.2.1. Visa/CCD = Method 2. Amex = Method 1 (EXT AUTH).
     const mUsed = methodReq === 'auto' ? (scheme === 'amex' ? 'm1' : 'm2') : methodReq;
-    const out = { aid, scheme, pan, psn, atc, arqc, un, aip, m1, m2, mUsed, cid: null, acType: null, sw: null, sentIad: null };
+    const out = { aid, scheme, pan, psn, atc, arqc, un, aip, m1, m2, mUsed, arqcVerified: !!skac, arqcMethod: av?.method || null, cid: null, acType: null, sw: null, sentIad: null };
     if (send && cardPresent) {
       if (mUsed === 'm1') {
         const ea = await run('EXTERNAL AUTHENTICATE (ARPC M1)', `00820000${(m1.iad.length / 2).toString(16).padStart(2, '0').toUpperCase()}${m1.iad}`);
         out.sw = ea.sw; out.eaAccepted = ea.sw === '9000'; out.sentIad = m1.iad;
       } else {
-        // Tag 91 (Issuer Auth Data) ARPC yöntemi: varsayılan Method-2 (Retail MAC,
-        // ARPC‖CSU — Visa/CCD; canlı doğrulandı). M/Chip'in Method-1 (3DES, ARPC‖ARC)
-        // beklediği kartlar için `arpcVariant:1` ile denenebilir (belge bilgisi;
-        // eldeki Mastercard offline TC'yi zaten reddettiğinden doğrulanamadı).
-        const variant = req.body?.arpcVariant ? String(req.body.arpcVariant) : '2';
+        // Tag 91 (Issuer Auth Data) ARPC yöntemi ŞEMA-FARKINDA: Mastercard/UnionPay
+        // M/Chip → Method-1 (3DES, ARPC‖ARC = m1.iad; paymentcardtools CVN10 ref +
+        // EMV Bk2 §8.2.1). Visa/CCD → Method-2 (Retail MAC, ARPC‖CSU). `arpcVariant`
+        // (1|2) ile override edilebilir.
+        const variant = req.body?.arpcVariant ? String(req.body.arpcVariant) : ((scheme === 'mastercard' || scheme === 'unionpay') ? '1' : '2');
         const base91 = variant === '1' ? m1.iad : m2.issuerAuthData;
         const iad91 = corrupt ? flip1(base91) : base91;
         out.arpcVariant = variant;
@@ -585,7 +600,13 @@ app.post('/api/arpc', async (req, res) => {
         const negAac = !r2.error && r2.acType === 0x00;
         if (tc1 && negAac) { verdict = 'PASS'; sent.note = 'Diferansiyel ✓ — doğru ARPC kabul (TC), bozuk ARPC red (AAC): kart issuer authentication\'ı KRİPTOGRAFİK olarak doğruluyor.'; }
         else if (tc1 && !r2.error && r2.acType === 0x40) { verdict = 'NA'; sent.note = 'Kart bozuk ARPC\'ye de TC döndü → ARPC\'yi doğrulamıyor; TC yalnızca risk-onay kararıdır (issuer auth uygulanmıyor).'; }
-        else if (!tc1) { verdict = 'WARN'; sent.note = `Kart doğru ARPC'ye ${cidLabel(r1.acType)} döndü — anahtar/session/CSU uyumsuzluğu ya da risk kararı olabilir.`; }
+        else if (!tc1) {
+          verdict = 'WARN';
+          const same = !r2.error && r2.acType === r1.acType;
+          sent.note = r1.arqcVerified
+            ? `Session key DOĞRULANDI (ARQC eşleşti: ${r1.arqcMethod}) ama kart doğru ARPC'ye ${cidLabel(r1.acType)} döndü${same ? ' — bozuk ARPC ile AYNI sonuç, yani ARPC değeri kararı değiştirmiyor' : ''} ⇒ kart bu terminal profilinde offline TC'yi ARPC'den bağımsız reddediyor (risk/politika kararı); issuer-auth doğrulaması gözlenemedi.`
+            : `Kart doğru ARPC'ye ${cidLabel(r1.acType)} döndü ve ARQC doğrulanamadı — bu PAN için doğru issuer anahtarı yüklü olmayabilir.`;
+        }
         else { verdict = 'WARN'; sent.note = 'Diferansiyel sonuç belirsiz.'; }
       } else {
         verdict = tc1 ? 'PASS' : 'WARN';
@@ -598,6 +619,7 @@ app.post('/api/arpc', async (req, res) => {
       scheme: r1.scheme, aid: r1.aid, pan: panMask, atc: r1.atc, arqc: r1.arqc, un: r1.un, aip: r1.aip || null,
       issuerAuthAdvertised: r1.aip && r1.aip.length >= 2 ? !!(parseInt(r1.aip.slice(0, 2), 16) & 0x04) : null,
       arc, csu, keyLabel: ks.label, keyLevel: ks.keyLevel, differential: wantDifferential && r1.mUsed === 'm2',
+      arqcVerified: r1.arqcVerified, arqcMethod: r1.arqcMethod,
       method1: { name: 'Method 1 — 3DES(SKac, ARQC ⊕ ARC‖00…)', arpc: r1.m1.arpc, iad: r1.m1.iad, sessionKey: r1.m1.sessionKey },
       method2: { name: 'Method 2 — Retail MAC(SKac, ARQC‖CSU)[:4]', arpc: r1.m2.arpc, issuerAuthData: r1.m2.issuerAuthData, sessionKey: r1.m2.sessionKey },
       methodUsed: r1.mUsed, sent, negative, verdict, steps, timestamp: new Date().toISOString(),

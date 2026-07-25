@@ -98,6 +98,18 @@ function decodeTvr(hex) {
   const b = []; for (let i = 0; i < 5; i++) b.push(parseInt(hex.slice(i * 2, i * 2 + 2), 16) || 0);
   return TVR_BITS.filter(([bi, m]) => b[bi] & m).map(([, , l]) => l);
 }
+// CVM List (8E) çözümü (EMV Bk3 §10.5). X(4B) + Y(4B) + (CVM Code, Condition) çiftleri.
+const CVM_METHOD = { 0x00: 'CVM başarısız', 0x01: 'Plaintext offline PIN', 0x02: 'Enciphered online PIN', 0x03: 'Plaintext offline PIN + imza', 0x04: 'Enciphered offline PIN', 0x05: 'Enciphered offline PIN + imza', 0x1E: 'İmza', 0x1F: 'CVM gerekmez' };
+const CVM_COND = { 0x00: 'her zaman', 0x01: 'unattended nakit', 0x02: 'nakit/cashback değilse', 0x03: 'terminal CVM destekliyorsa', 0x04: 'manuel nakit', 0x05: 'cashback', 0x06: '< X', 0x07: '≥ X', 0x08: '< Y', 0x09: '≥ Y' };
+function decodeCvmList(hex) {
+  if (!hex || hex.length < 20) return null;
+  const rules = [];
+  for (let i = 16; i + 4 <= hex.length; i += 4) {
+    const code = parseInt(hex.slice(i, i + 2), 16), cond = parseInt(hex.slice(i + 2, i + 4), 16);
+    rules.push({ method: CVM_METHOD[code & 0x3F] || `0x${(code & 0x3F).toString(16)}`, cond: CVM_COND[cond] || `0x${cond.toString(16)}`, cont: !!(code & 0x40) });
+  }
+  return { X: hex.slice(0, 8), Y: hex.slice(8, 16), rules };
+}
 
 // Build a lookup context over one card image (aggregating tags across all apps).
 // `crypto` (optional) = { oda, genac } from the live EMV flow, so rules can also
@@ -241,6 +253,8 @@ const RULES = [
     run: (c) => { const v = c.val('8E'); if (!v) return NA('8E yok'); const rules = v.slice(16); if (rules.length < 4) return NA('CVM kuralı yok'); const conds = []; for (let i = 0; i + 4 <= rules.length; i += 4) conds.push(parseInt(rules.slice(i + 2, i + 4), 16)); const rfu = conds.filter((x) => x > 0x09 && x < 0x80); return rfu.length ? WARN(`RFU: ${rfu.map((x) => '0x' + x.toString(16)).join(',')}`, 'Tanımsız (RFU) CVM koşul kodu') : PASS(`${conds.length} koşul · ${[...new Set(conds)].map((x) => '0x' + x.toString(16).padStart(2, '0')).join(' ')}`); } },
   { id: 'CVM-05', cat: 'CVM', sev: 'C', spec: 'EMV Bk2 · §7.1 (Enciphered Offline PIN)', req: 'Şifreli offline PIN CVM (0x04/0x05) ⇒ ICC PIN Şifreleme PK (9F2D) veya ICC PK (9F46) mevcut',
     run: (c) => { const v = c.val('8E'); if (!v) return NA('8E yok'); const rules = v.slice(16); const methods = []; for (let i = 0; i + 4 <= rules.length; i += 4) methods.push(parseInt(rules.slice(i, i + 2), 16) & 0x3F); const encPin = methods.some((m) => m === 0x04 || m === 0x05); if (!encPin) return NA('Şifreli offline PIN CVM yok'); const ok = c.has('9F2D') || c.has('9F46'); return ok ? PASS(c.has('9F2D') ? 'ICC PIN Enc PK (9F2D)' : 'ICC PK (9F46) ile') : FAIL('—', 'Şifreli offline PIN var ama ne 9F2D ne 9F46 mevcut'); } },
+  { id: 'CVM-06', cat: 'CVM', sev: 'R', spec: 'EMV Bk3 · §10.5 (CVM List çözümü)', req: 'CVM List (8E) kuralları insan-okunur çözümlenir',
+    run: (c) => { const v = c.val('8E'); if (!v) return NA('8E yok'); const d = decodeCvmList(v); if (!d || !d.rules.length) return WARN(v, 'CVM kuralı çözülemedi'); return PASS(d.rules.map((r) => `${r.method} [${r.cond}]${r.cont ? ' →devam' : ''}`).join(' · ')); } },
 
   // ── Kullanım kontrolü / yerel veri ─────────────────────────────────────
   { id: 'USE-01', cat: 'Kullanım Kontrolü (AUC)', sev: 'R', req: 'Application Usage Control (9F07) mevcut',

@@ -80,13 +80,13 @@ const TAB_GROUPS = [
   { id: 'cert', label: 'Sertifikasyon', icon: '🛡️', tabs: [
     { id: 'compliance', label: 'Uyumluluk', icon: '✔', desc: 'EMV çekirdek + Mastercard CPV kural motoru' },
     { id: 'profilepdf', label: 'PDF Profil', icon: '📄', desc: 'Profile Advisor PDF ↔ kart karşılaştırma' },
-    { id: 'oda', label: 'Offline Sertifika', icon: '🔐', desc: 'DDA / CDA / fDDA sertifika zinciri + imza' },
+    { id: 'oda', label: 'Offline Doğrulama (ODA)', icon: '🔐', desc: 'Offline Data Authentication — SDA/DDA/CDA sertifika zinciri + imza' },
     { id: 'terminal', label: 'Terminal / Senaryo', icon: '🖥', desc: 'Terminal profili + TC/ARQC/AAC senaryoları' },
     { id: 'test', label: 'Test', icon: '🧪', desc: 'APDU dizisi test paketleri' },
   ] },
   { id: 'keymgmt', label: 'Anahtarlar & PIN', icon: '🔑', tabs: [
     { id: 'capk', label: 'CA Anahtarları', icon: '🔑', desc: 'CAPK deposu (RID + index)' },
-    { id: 'keys', label: 'İşlem Anahtarları', icon: '🗝', desc: 'AC / MAC / ENC işlem anahtarları' },
+    { id: 'keys', label: 'Oturum Anahtarları', icon: '🗝', desc: 'AC / MAC / ENC oturum anahtarları' },
     { id: 'pin', label: 'PIN Değiştir', icon: '🔢', desc: 'PIN değiştir / doğrula' },
   ] },
   { id: 'output', label: 'Sonuç & Yapılandırma', icon: '📄', tabs: [
@@ -151,7 +151,7 @@ function App() {
   const [cardDualPhase, setCardDualPhase] = useState('');
   const [cardDualSlot, setCardDualSlot] = useState('');
   const cardDualCancel = useRef(false);
-  const [odaContact, setOdaContact] = useState(null);       // Offline Sertifika — contact result
+  const [odaContact, setOdaContact] = useState(null);       // Offline Doğrulama (ODA) — contact result
   const [odaContactless, setOdaContactless] = useState(null); // contactless result
   const [odaBusy, setOdaBusy] = useState('');
   const [compContact, setCompContact] = useState(null);       // Uyumluluk — contact result
@@ -744,7 +744,7 @@ ${apps}
   };
   const cancelCardDual = () => { cardDualCancel.current = true; setCardDualPhase(''); setCardDualSlot(''); };
 
-  // ── Offline Sertifika: verify the cert chain + CDA dynamic signature on one
+  // ── Offline Doğrulama (ODA): verify the cert chain + CDA dynamic signature on one
   // interface. Reuses the full /api/emv/read flow (it already recovers Issuer/ICC
   // PK and does the CDA GENERATE AC + SDAD verify) but keeps the result separate.
   const runOdaVerify = async (iface) => {

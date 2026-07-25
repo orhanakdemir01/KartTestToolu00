@@ -1,4 +1,4 @@
-// "İşlem Anahtarları" tab: 3DES key sets (AC/MAC/ENC) list + add/edit/delete form
+// "Oturum Anahtarları" tab: 3DES session key sets (AC/MAC/ENC) list + add/edit/delete form
 export function KeysTab({
   sessionKeys, deleteSessionKey, keyForm, setKeyForm, addSessionKey, keyAddResult,
   keyEdit, startEditKey, cancelEditKey, updateSessionKey,
@@ -7,7 +7,7 @@ export function KeysTab({
   const set = (patch) => setKeyForm({ ...keyForm, ...patch });
   return (
     <section className="panel">
-      <div className="panel-head"><h2>İşlem Anahtarları ({sessionKeys.length})</h2></div>
+      <div className="panel-head"><h2>Oturum Anahtarları ({sessionKeys.length})</h2></div>
       <p className="muted small">Kriptogram işleme için 3DES anahtarları (AC / MAC / ENC). Anahtar seviyesi: <b>master</b> (issuer MDK → PAN/PSN ile ICC türetilir), <b>icc</b> (ICC anahtarı → ATC ile session), <b>session</b> (doğrudan kullanılır). Satırdaki <b>Düzenle</b> ile mevcut anahtarı değiştirebilirsin.</p>
       {sessionKeys.length > 0 && (
         <table className="capk-table">

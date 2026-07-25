@@ -384,7 +384,7 @@ app.post('/api/pin/change', async (req, res) => {
   const { newPin, keyLabel, keyPan, mode = 'change', p1, p2, scheme: schemeOv,
     aid: aidOv, pan: panOv, psn: psnOv, atc: atcOv } = req.body || {};
   const ks = findExact(keyLabel, keyPan || '');
-  if (!ks) return res.status(400).json({ error: 'Anahtar seti bulunamadı — İşlem Anahtarları sekmesinden ekleyin/seçin' });
+  if (!ks) return res.status(400).json({ error: 'Anahtar seti bulunamadı — Oturum Anahtarları sekmesinden ekleyin/seçin' });
   if (!ks.macKey) return res.status(400).json({ error: 'Seçilen anahtar setinde MAC anahtarı yok (secure messaging için gerekli)' });
   if (mode === 'change' && !ks.encKey) return res.status(400).json({ error: 'PIN değişimi için anahtar setinde ENC anahtarı olmalı' });
 

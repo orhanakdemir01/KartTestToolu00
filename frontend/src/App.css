@@ -406,7 +406,7 @@ a:hover { color: #1a9850; text-decoration: underline; }
 .oda-note { color: #b45309; font-size: 11px; }
 .oda-fdda-note { border-left: 3px solid #d97706; padding-left: 10px; margin-top: 8px; line-height: 1.5; color: #6b7480; }
 
-/* ── Offline Sertifika / Uyumluluk / PDF arayüz kartları ── */
+/* ── Offline Doğrulama (ODA) / Uyumluluk / PDF arayüz kartları ── */
 .oda-grid { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 8px; }
 @media (min-width: 1000px) { .oda-grid { grid-template-columns: 1fr 1fr; align-items: start; } }
 .oda-iface { border: 1px solid #e6eae8; border-radius: 12px; padding: 16px; background: #fff; box-shadow: 0 1px 2px rgba(20,32,26,0.04); }

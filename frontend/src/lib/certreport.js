@@ -95,7 +95,7 @@ function cryptoSection(emv) {
     out += `<p class="${cls}"><b>${label}</b> — ${esc(v.keyLabel || '')}${v.keyLevel ? ` (${esc(v.keyLevel)})` : ''}</p>` + kv([
       ['Hesaplanan', v.computed], ['Kart ARQC', v.cardArqc], ['Session Key', v.sessionKey], ['MAC girdisi', v.inputData],
     ]);
-    if (!v.match && !realFail) out += `<p class="muted">Not: Kripto doğrulama tamamlanamadı (kart hatası değil). Doğru anahtarı "İşlem Anahtarları" sekmesinden yükleyip tekrar deneyin.</p>`;
+    if (!v.match && !realFail) out += `<p class="muted">Not: Kripto doğrulama tamamlanamadı (kart hatası değil). Doğru anahtarı "Oturum Anahtarları" sekmesinden yükleyip tekrar deneyin.</p>`;
   } else if (v?.noKey) {
     out += `<p class="muted">⚠ Bu PAN için işlem anahtarı yok — ARQC doğrulanamadı.</p>`;
   }

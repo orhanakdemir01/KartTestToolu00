@@ -55,7 +55,7 @@ export function PinTab({ pinForm, setPinForm, changePin, pinBusy, pinResult, ses
 
         {(missingMac || missingEnc) && (
           <p className="err-text small">
-            ⚠ Seçilen anahtar setinde {missingMac ? 'MAC' : ''}{missingMac && missingEnc ? ' ve ' : ''}{missingEnc ? 'ENC' : ''} anahtarı yok — İşlem Anahtarları sekmesinden ekleyin.
+            ⚠ Seçilen anahtar setinde {missingMac ? 'MAC' : ''}{missingMac && missingEnc ? ' ve ' : ''}{missingEnc ? 'ENC' : ''} anahtarı yok — Oturum Anahtarları sekmesinden ekleyin.
           </p>
         )}
 

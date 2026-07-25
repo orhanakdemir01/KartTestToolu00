@@ -132,7 +132,7 @@ export function CardTab({
                 </tbody>
               </table>
             )}
-            {emv.genac.verify?.noKey && <p className="muted small">⚠ Bu PAN için işlem anahtarı yok — ARQC doğrulanamadı. "İşlem Anahtarları" sekmesinden ekleyin.</p>}
+            {emv.genac.verify?.noKey && <p className="muted small">⚠ Bu PAN için oturum anahtarı yok — ARQC doğrulanamadı. "Oturum Anahtarları" sekmesinden ekleyin.</p>}
             {emv.genac.verify?.error && <p className="err-text">ARQC hesaplama hatası: {emv.genac.verify.error}</p>}
             {emv.genac.verify && emv.genac.verify.match != null && (
               <div className="arqc-verify">

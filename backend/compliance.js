@@ -64,7 +64,7 @@ const CAT_SPEC = {
   'AFL/Kayıt': 'EMV Bk3 · §10.2 (AFL/READ RECORD)',
   'ODA': 'EMV Bk2 · §5-7 (Offline Data Auth)',
   'CVM': 'EMV Bk3 · §10.5 (CVM List 8E)',
-  'Kullanım/Yerel': 'EMV Bk3 · Ann. A (AUC/yerel)',
+  'Kullanım Kontrolü (AUC)': 'EMV Bk3 · Ann. A (AUC/yerel)',
   'DOL/FCI': 'EMV Bk1 §11.3 (FCI) · Bk3 §5.4 (DOL)',
   'Tutarlılık': 'EMV Bk3 · Çapraz-alan tutarlılık',
   'Mastercard CPV': 'M/Chip Requirements · CPV',
@@ -145,15 +145,15 @@ const RULES = [
     run: (c) => { const v = c.val('8E'); if (!v) return NA('8E yok'); const rules = v.slice(16); if (rules.length < 4) return WARN('—', 'CVM kuralı yok'); const known = new Set([0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x1E, 0x1F]); const codes = []; for (let i = 0; i + 4 <= rules.length; i += 4) codes.push(parseInt(rules.slice(i, i + 2), 16) & 0x3F); const bad = codes.filter((m) => !known.has(m)); return bad.length ? WARN(`bilinmeyen: ${bad.map((m) => '0x' + m.toString(16)).join(',')}`, 'Tanınmayan CVM method kodu (RFU)') : PASS(`${codes.length} kural · ${[...new Set(codes)].map((m) => '0x' + m.toString(16).padStart(2, '0')).join(' ')}`); } },
 
   // ── Kullanım kontrolü / yerel veri ─────────────────────────────────────
-  { id: 'USE-01', cat: 'Kullanım/Yerel', sev: 'R', req: 'Application Usage Control (9F07) mevcut',
+  { id: 'USE-01', cat: 'Kullanım Kontrolü (AUC)', sev: 'R', req: 'Application Usage Control (9F07) mevcut',
     run: (c) => c.has('9F07') ? PASS(c.val('9F07')) : WARN('—', 'AUC önerilir') },
-  { id: 'USE-02', cat: 'Kullanım/Yerel', sev: 'C', req: 'Issuer Country Code (5F28) geçerli ISO 3166 numerik',
+  { id: 'USE-02', cat: 'Kullanım Kontrolü (AUC)', sev: 'C', req: 'Issuer Country Code (5F28) geçerli ISO 3166 numerik',
     run: (c) => { const v = c.val('5F28'); if (!v) return NA('5F28 yok'); return countryName(v) ? PASS(`${v} (${countryName(v)})`) : FAIL(v, 'Geçersiz ülke kodu'); } },
-  { id: 'USE-03', cat: 'Kullanım/Yerel', sev: 'C', req: 'Application Currency Code (9F42) geçerli ISO 4217',
+  { id: 'USE-03', cat: 'Kullanım Kontrolü (AUC)', sev: 'C', req: 'Application Currency Code (9F42) geçerli ISO 4217',
     run: (c) => { const v = c.val('9F42'); if (!v) return NA('9F42 yok'); return currencyName(v) ? PASS(`${v} (${currencyName(v)})`) : FAIL(v, 'Geçersiz para birimi'); } },
-  { id: 'USE-04', cat: 'Kullanım/Yerel', sev: 'R', req: 'Language Preference (5F2D) mevcut',
+  { id: 'USE-04', cat: 'Kullanım Kontrolü (AUC)', sev: 'R', req: 'Language Preference (5F2D) mevcut',
     run: (c) => c.has('5F2D') ? PASS(c.val('5F2D')) : WARN('—') },
-  { id: 'USE-05', cat: 'Kullanım/Yerel', sev: 'R', spec: 'EMV Bk3 · Ann. A tag 5F25', req: 'Application Effective Date (5F25) varsa geçerli YYMMDD',
+  { id: 'USE-05', cat: 'Kullanım Kontrolü (AUC)', sev: 'R', spec: 'EMV Bk3 · Ann. A tag 5F25', req: 'Application Effective Date (5F25) varsa geçerli YYMMDD',
     run: (c) => { const v = c.val('5F25'); if (!v) return WARN('—', '5F25 önerilir'); return /^[0-9]{6}$/.test(v) ? PASS(v) : FAIL(v, 'YYMMDD değil'); } },
 
   // ── DOL / FCI yapısı ───────────────────────────────────────────────────
@@ -279,7 +279,7 @@ const RULES = [
   { id: 'CRY-07', cat: 'ODA Kripto', sev: 'R', req: 'ARQC işlem anahtarıyla doğrulandı',
     // Önerilen (R) kural: eşleşmezlik FAIL değil WARN — yanlış/eksik yapılandırılmış
     // işlem anahtarı da eşleşmezlik verir, bu bir kart kusuru olmayabilir.
-    run: (c) => { if (!c.hasCrypto || !c.genac?.arqc) return NA('AC yok'); const v = c.genac.verify; if (!v) return NA('Doğrulama yok'); if (v.noKey) return WARN('—', 'Bu PAN için işlem anahtarı yok — İşlem Anahtarları sekmesi'); return v.match ? PASS(`anahtar ${v.keyLabel || ''}`) : WARN('—', 'ARQC eşleşmedi — anahtar yanlış/eksik olabilir'); } },
+    run: (c) => { if (!c.hasCrypto || !c.genac?.arqc) return NA('AC yok'); const v = c.genac.verify; if (!v) return NA('Doğrulama yok'); if (v.noKey) return WARN('—', 'Bu PAN için oturum anahtarı yok — Oturum Anahtarları sekmesi'); return v.match ? PASS(`anahtar ${v.keyLabel || ''}`) : WARN('—', 'ARQC eşleşmedi — anahtar yanlış/eksik olabilir'); } },
 ];
 
 // Run all applicable rules against a card image for one interface.

@@ -1,7 +1,7 @@
 import { OdaPanel } from '../OdaPanel.jsx';
 import { VerdictBanner } from '../VerdictBanner.jsx';
 
-// "Offline Sertifika" tab: focused offline data-authentication / CDA certificate
+// "Offline Doğrulama (ODA)" tab: focused offline data-authentication / CDA certificate
 // verification for Mastercard / Visa / Amex on BOTH contact and contactless. It
 // reuses the full /api/emv/read flow (cert chain recovery + CDA GENERATE AC +
 // SDAD verify) but surfaces only the certificate chain and the dynamic-signature
@@ -75,7 +75,7 @@ export function OdaTab({ odaContact, odaContactless, odaBusy, runOdaVerify, clea
   return (
     <section className="panel">
       <div className="panel-head">
-        <h2>Offline Sertifika Doğrulama</h2>
+        <h2>Offline Veri Kimlik Doğrulama (ODA)</h2>
         <span className="muted small">CDA · Mastercard / Visa / Amex · temaslı + temassız</span>
       </div>
       <p className="muted small">Kartın <b>offline sertifika zincirini</b> (CAPK → Issuer PK → ICC PK) ve <b>CDA dinamik imzasını</b> (GENERATE AC P1=0x90 → SDAD) doğrular. Her iki arayüzü ayrı ayrı test et. CAPK'ler <b>CA Anahtarları</b> sekmesinden yönetilir.</p>

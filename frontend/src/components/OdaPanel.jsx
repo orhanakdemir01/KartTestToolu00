@@ -63,7 +63,7 @@ export function OdaPanel({ oda }) {
   const label = dynamics.filter((d) => d.kind !== 'none').map((d) => KIND_LABEL[d.kind] || d.kind).join(' + ');
   return (
     <div className="genac oda-panel">
-      <h3>Offline Veri Doğrulama (ODA){label ? ` — ${label}` : ''}</h3>
+      <h3>Offline Veri Kimlik Doğrulama (ODA){label ? ` — ${label}` : ''}</h3>
       {oda.error && <p className="err-text">ODA hatası: {oda.error}</p>}
       {!oda.capkFound && oda.rid && <p className="err-text">⚠ CAPK bulunamadı (RID {oda.rid}, index {oda.capkIndex}) — "CA Anahtarları" sekmesinden ekleyin.</p>}
       {oda.capkFound && (() => {

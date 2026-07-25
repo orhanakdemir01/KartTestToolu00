@@ -157,6 +157,7 @@ const CAT_SPEC = {
   'Temassız Kernel': 'EMVCo Book C-2…C-8 (Kernel)',
   'ODA Kripto': 'EMV Bk2 · §6 (RSA/SDAD)',
   'Kriptogram Sürümü (CVN)': 'EMV Bk2 · §8.2 · Visa VIS (CVN)',
+  'İşlem Aksiyon Analizi': 'EMV Bk3 · §10.7 (Terminal Action Analysis)',
 };
 
 // EMVCo temassız kernel eşlemesi (şema → kernel numarası). Book C-2..C-8.
@@ -436,6 +437,12 @@ const RULES = [
     run: (c) => { const iad = c.val('9F10') || c.genac?.iad; if (!iad) return NA('IAD (9F10) yok'); const info = cvnInfo(c.scheme, iad); if (!info) return NA(`${c.scheme || '?'} için CVN eşlemi yok (ham IAD: ${iad.slice(0, 8)}…)`); return info.label ? PASS(`0x${info.cvn} — ${info.label}`) : WARN(`0x${info.cvn}`, 'Tanınan CVN listesinde değil — issuer spec ile doğrula'); } },
   { id: 'CVN-02', cat: 'Kriptogram Sürümü (CVN)', sev: 'C', spec: 'EMV Bk2 · §8.2 (CVN ↔ ARQC)', req: 'Bildirilen CVN, doğrulanan ARQC kompozisyonuyla tutarlı',
     run: (c) => { const iad = c.val('9F10') || c.genac?.iad; if (!iad || !c.hasCrypto) return NA('IAD/kripto yok'); const info = cvnInfo(c.scheme, iad); const m = c.genac?.verify?.method; if (!info || !info.label || !m || !c.genac?.verify?.match) return NA('CVN etiketi veya doğrulanmış ARQC yok'); const csk = /CSK/i.test(m); const wantCsk = /CSK/i.test(info.label); return csk === wantCsk ? PASS(`CVN ↔ ${csk ? 'CSK' : 'UDK'} ✓`) : WARN(`CVN=${info.cvn} ama ARQC ${m}`, 'Bildirilen CVN ile eşleşen ARQC kompozisyonu farklı'); } },
+
+  // ── Terminal Action Analysis: kartın IAC'leriyle temsili koşullar → offline karar ──
+  // Online-yetenekli terminal modeli: TVR&IAC-Denial→AAC · TVR&IAC-Online→ARQC · yoksa TC.
+  // (TAC'ler terminal profiline bağlı; burada yalnızca kart IAC'lerinin davranışı gösterilir.)
+  { id: 'TAA-01', cat: 'İşlem Aksiyon Analizi', sev: 'R', spec: 'EMV Bk3 · §10.7 (Action Analysis)', req: 'Kartın IAC risk-davranış profili (temsili koşullar → TC/ARQC/AAC)',
+    run: (c) => { const p5 = (h) => (h && h.length >= 10) ? [0, 1, 2, 3, 4].map((i) => parseInt(h.slice(i * 2, i * 2 + 2), 16) || 0) : null; const D = p5(c.val('9F0F')), O = p5(c.val('9F0E')); if (!D && !O) return NA('IAC (9F0E/9F0F) yok'); const dD = D || [0, 0, 0, 0, 0], dO = O || [0, 0, 0, 0, 0]; const SCEN = { 'ODA-fail': [0x4C, 0, 0, 0, 0], 'süre-dolmuş': [0, 0x40, 0, 0, 0], 'CVM-fail': [0, 0, 0x80, 0, 0], 'floor-aşıldı': [0, 0, 0, 0x80, 0], 'offline-limit': [0, 0, 0, 0x60, 0], 'rastgele-online': [0, 0, 0, 0x10, 0] }; const and = (a, b) => a.some((x, i) => x & (b[i] || 0)); const act = (t) => and(t, dD) ? 'AAC' : (and(t, dO) ? 'ARQC' : 'TC'); return PASS(Object.entries(SCEN).map(([k, t]) => `${k}→${act(t)}`).join(' · ')); } },
 ];
 
 // Run all applicable rules against a card image for one interface.

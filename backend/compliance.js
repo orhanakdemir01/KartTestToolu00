@@ -44,6 +44,28 @@ const PAN_LEN = { Visa: [13, 16, 19], Mastercard: [16], Amex: [15], Discover: [1
 const ymd6 = (v) => '20' + v;
 const todayYmd = () => { const t = new Date(); return `${t.getFullYear()}${String(t.getMonth() + 1).padStart(2, '0')}${String(t.getDate()).padStart(2, '0')}`; };
 
+// AIP (82) byte-1 yetenek bitleri → etiketler (EMV Bk3 Ann. C1). Şemadan bağımsız.
+function decodeAip(b1) {
+  const f = [];
+  if (b1 & 0x40) f.push('SDA'); if (b1 & 0x20) f.push('DDA');
+  if (b1 & 0x10) f.push('CV'); if (b1 & 0x08) f.push('TRM');
+  if (b1 & 0x04) f.push('IssuerAuth'); if (b1 & 0x02) f.push('OnDeviceCVM');
+  if (b1 & 0x01) f.push('CDA');
+  return f;
+}
+// AUC (9F07) kullanım bitleri → etiketler (EMV Bk3 Ann. C2). Şemadan bağımsız.
+function decodeAuc(hex) {
+  const b1 = parseInt(hex.slice(0, 2), 16) || 0;
+  const b2 = hex.length >= 4 ? (parseInt(hex.slice(2, 4), 16) || 0) : 0;
+  const f = [];
+  if (b1 & 0x80) f.push('yurtiçi nakit'); if (b1 & 0x40) f.push('yurtdışı nakit');
+  if (b1 & 0x20) f.push('yurtiçi mal'); if (b1 & 0x10) f.push('yurtdışı mal');
+  if (b1 & 0x08) f.push('yurtiçi hizmet'); if (b1 & 0x04) f.push('yurtdışı hizmet');
+  if (b1 & 0x02) f.push('ATM'); if (b1 & 0x01) f.push('ATM-dışı terminal');
+  if (b2 & 0x80) f.push('yurtiçi cashback'); if (b2 & 0x40) f.push('yurtdışı cashback');
+  return { flags: f, b1, b2 };
+}
+
 // Build a lookup context over one card image (aggregating tags across all apps).
 // `crypto` (optional) = { oda, genac } from the live EMV flow, so rules can also
 // verify offline auth cryptographically and inspect GENERATE AC output.
@@ -92,6 +114,7 @@ const CAT_SPEC = {
   'DOL/FCI': 'EMV Bk1 §11.3 (FCI) · Bk3 §5.4 (DOL)',
   'Veri Formatı': 'EMV Bk3 · Ann. A (veri öğesi format/uzunluk)',
   'Kart Veri Bütünlüğü': 'ISO/IEC 7812 · 7813 (PAN/IIN/tarih bütünlüğü)',
+  'Bit Alanı Kodlama': 'EMV Bk3 · Ann. C1/C2 (AIP/AUC bit alanları)',
   'Tutarlılık': 'EMV Bk3 · Çapraz-alan tutarlılık',
   'Mastercard CPV': 'M/Chip Requirements · CPV',
   'Visa VIS/qVSDC': 'Visa VIS 1.6 · VCPS 2.x (qVSDC)',
@@ -250,6 +273,19 @@ const RULES = [
     run: (c) => { const v = c.val('5F24'); if (!v || !/^[0-9]{6}$/.test(v)) return NA('5F24 yok/format'); return ymd6(v) >= todayYmd() ? PASS(`${v} geçerli`) : WARN(`${v} (dolmuş)`, 'Kartın süresi dolmuş — test kartında beklenebilir'); } },
   { id: 'CVD-04', cat: 'Kart Veri Bütünlüğü', sev: 'C', spec: 'EMV Bk3 · tag 5F25', req: 'Application Effective Date (5F25) gelecekte değil',
     run: (c) => { const v = c.val('5F25'); if (!v || !/^[0-9]{6}$/.test(v)) return NA('5F25 yok/format'); return ymd6(v) <= todayYmd() ? PASS(`${v} aktif`) : WARN(`${v} (gelecek)`, 'Geçerlilik başlangıcı gelecekte — kart henüz aktif değil'); } },
+
+  // ── Bit-alanı kodlama: standart EMV bit alanlarını çöz + doğrula (şemadan bağımsız).
+  // CVR (IAD içi) BİLİNÇLİ olarak dışarıda: bit anlamları şema/issuer-özel, otoriter değil.
+  { id: 'BIT-01', cat: 'Bit Alanı Kodlama', sev: 'R', spec: 'EMV Bk3 · Ann. C1 (AIP)', req: 'AIP (82) yetenek bitleri çözümlenir',
+    run: (c) => { if (!c.aip) return NA('AIP yok'); const f = decodeAip(c.aipB1); return f.length ? PASS(f.join(' · ')) : WARN(c.aip, 'AIP hiç yetenek bildirmiyor'); } },
+  { id: 'BIT-02', cat: 'Bit Alanı Kodlama', sev: 'R', spec: 'EMV Bk3 · Ann. C2 (AUC 9F07)', req: 'Application Usage Control (9F07) kullanım bitleri çözümlenir',
+    run: (c) => { const v = c.val('9F07'); if (!v || v.length < 2) return NA('9F07 yok'); const d = decodeAuc(v); return d.flags.length ? PASS(d.flags.join(' · ')) : WARN(v, 'Hiç kullanım bildirilmemiş'); } },
+  { id: 'BIT-03', cat: 'Bit Alanı Kodlama', sev: 'C', spec: 'EMV Bk3 · Ann. C2 (AUC RFU)', req: 'AUC (9F07) byte2 RFU bitleri (b1–b6) sıfır',
+    run: (c) => { const v = c.val('9F07'); if (!v || v.length < 4) return NA('9F07 (2 bayt) yok'); const b2 = parseInt(v.slice(2, 4), 16); return (b2 & 0x3F) ? WARN('byte2=' + v.slice(2, 4), 'AUC byte2 RFU bitleri sıfır değil') : PASS('RFU sıfır'); } },
+  { id: 'BIT-04', cat: 'Bit Alanı Kodlama', sev: 'C', spec: 'EMV Bk3 · Ann. C2 (AUC)', req: 'AUC (9F07) en az bir kullanım bağlamı bildiriyor',
+    run: (c) => { const v = c.val('9F07'); if (!v || v.length < 2) return NA('9F07 yok'); const d = decodeAuc(v); return d.flags.length ? PASS(`${d.flags.length} kullanım bağlamı`) : WARN(v, 'AUC tümü sıfır — kart hiçbir bağlamda geçerli değil (perso hatası?)'); } },
+  { id: 'BIT-05', cat: 'Bit Alanı Kodlama', sev: 'R', spec: 'EMV Bk3 · Ann. C2 (AUC cashback)', req: 'AUC cashback açıksa mal/hizmet kullanımı da açık',
+    run: (c) => { const v = c.val('9F07'); if (!v || v.length < 4) return NA('9F07 (2 bayt) yok'); const b1 = parseInt(v.slice(0, 2), 16), b2 = parseInt(v.slice(2, 4), 16); if (!(b2 & 0xC0)) return NA('Cashback bildirilmemiş'); return (b1 & 0x3C) ? PASS('cashback ↔ mal/hizmet ✓') : WARN(v, 'Cashback açık ama mal/hizmet kullanımı kapalı'); } },
 
   // ── Mastercard CPV (şema-özel) ─────────────────────────────────────────
   { id: 'MC-01', cat: 'Mastercard CPV', sev: 'M', scheme: 'Mastercard', req: 'Application Version Number (9F08) mevcut',

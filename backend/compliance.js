@@ -53,6 +53,23 @@ function decodeAip(b1) {
   if (b1 & 0x01) f.push('CDA');
   return f;
 }
+// Cryptogram Version Number (CVN) — şema+IAD'den çıkar ve BİLİNEN algoritmasını
+// etiketle. Kaynak: EMV Bk2 §8.2 + Visa VIS (paymentcardtools CVN referansları).
+// Yalnızca kesin bilinen CVN'ler etiketlenir; diğerleri ham raporlanır (uydurma yok).
+const CVN_KNOWN = {
+  // Visa VIS IAD: byte0=Length, byte1=DKI, byte2=CVN → hex offset 4:6.
+  visa: { off: 4, map: {
+    '0A': 'CVN 10 · UDK-direct session key · ARPC Method 1 · pad Method 1',
+    '12': 'CVN 18 · CSK session key · ARPC Method 2 · pad Method 2',
+    '16': 'CVN 22 · CSK session key · ARPC Method 2 · pad Method 2',
+  } },
+};
+function cvnInfo(scheme, iad) {
+  const cfg = CVN_KNOWN[(scheme || '').toLowerCase()];
+  if (!cfg || !iad || iad.length < cfg.off + 2) return null;
+  const cvn = iad.slice(cfg.off, cfg.off + 2).toUpperCase();
+  return { cvn, label: cfg.map[cvn] || null };
+}
 // AUC (9F07) kullanım bitleri → etiketler (EMV Bk3 Ann. C2). Şemadan bağımsız.
 function decodeAuc(hex) {
   const b1 = parseInt(hex.slice(0, 2), 16) || 0;
@@ -125,6 +142,7 @@ const CAT_SPEC = {
   'UnionPay': 'UnionPay UICS · PBOC 3.0',
   'Temassız Kernel': 'EMVCo Book C-2…C-8 (Kernel)',
   'ODA Kripto': 'EMV Bk2 · §6 (RSA/SDAD)',
+  'Kriptogram Sürümü (CVN)': 'EMV Bk2 · §8.2 · Visa VIS (CVN)',
 };
 
 // EMVCo temassız kernel eşlemesi (şema → kernel numarası). Book C-2..C-8.
@@ -392,6 +410,12 @@ const RULES = [
     // Önerilen (R) kural: eşleşmezlik FAIL değil WARN — yanlış/eksik yapılandırılmış
     // işlem anahtarı da eşleşmezlik verir, bu bir kart kusuru olmayabilir.
     run: (c) => { if (!c.hasCrypto || !c.genac?.arqc) return NA('AC yok'); const v = c.genac.verify; if (!v) return NA('Doğrulama yok'); if (v.noKey) return WARN('—', 'Bu PAN için oturum anahtarı yok — Oturum Anahtarları sekmesi'); return v.match ? PASS(`anahtar ${v.keyLabel || ''}`) : WARN('—', 'ARQC eşleşmedi — anahtar yanlış/eksik olabilir'); } },
+
+  // ── Kriptogram Sürümü (CVN) tanımlama — IAD'den CVN + bilinen algoritma ──
+  { id: 'CVN-01', cat: 'Kriptogram Sürümü (CVN)', sev: 'R', spec: 'EMV Bk2 · §8.2 (CVN)', req: 'Cryptogram Version Number (CVN) tanımlanır + bilinen algoritma',
+    run: (c) => { const iad = c.val('9F10') || c.genac?.iad; if (!iad) return NA('IAD (9F10) yok'); const info = cvnInfo(c.scheme, iad); if (!info) return NA(`${c.scheme || '?'} için CVN eşlemi yok (ham IAD: ${iad.slice(0, 8)}…)`); return info.label ? PASS(`0x${info.cvn} — ${info.label}`) : WARN(`0x${info.cvn}`, 'Tanınan CVN listesinde değil — issuer spec ile doğrula'); } },
+  { id: 'CVN-02', cat: 'Kriptogram Sürümü (CVN)', sev: 'C', spec: 'EMV Bk2 · §8.2 (CVN ↔ ARQC)', req: 'Bildirilen CVN, doğrulanan ARQC kompozisyonuyla tutarlı',
+    run: (c) => { const iad = c.val('9F10') || c.genac?.iad; if (!iad || !c.hasCrypto) return NA('IAD/kripto yok'); const info = cvnInfo(c.scheme, iad); const m = c.genac?.verify?.method; if (!info || !info.label || !m || !c.genac?.verify?.match) return NA('CVN etiketi veya doğrulanmış ARQC yok'); const csk = /CSK/i.test(m); const wantCsk = /CSK/i.test(info.label); return csk === wantCsk ? PASS(`CVN ↔ ${csk ? 'CSK' : 'UDK'} ✓`) : WARN(`CVN=${info.cvn} ama ARQC ${m}`, 'Bildirilen CVN ile eşleşen ARQC kompozisyonu farklı'); } },
 ];
 
 // Run all applicable rules against a card image for one interface.

@@ -126,6 +126,7 @@ export function KeysTab({
               <tr><td>{arpcResult.method1?.name}</td><td className="mono">{arpcResult.method1?.arpc} <span className="muted">· IAD {arpcResult.method1?.iad}</span></td></tr>
               <tr><td>{arpcResult.method2?.name}</td><td className="mono">{arpcResult.method2?.arpc} <span className="muted">· IAD {arpcResult.method2?.issuerAuthData}</span></td></tr>
               {arpcResult.sent && <tr><td>Karta gönderilen</td><td className="mono small">{arpcResult.sent.method}{arpcResult.sent.cid ? ` · CID ${arpcResult.sent.cid} (${arpcResult.sent.cidLabel})` : ''} · SW {arpcResult.sent.sw}</td></tr>}
+              {arpcResult.sent?.note && <tr><td>Not</td><td className="muted small">{arpcResult.sent.note}</td></tr>}
               <tr><td>Session Key (SKac)</td><td className="mono small muted">{arpcResult.method2?.sessionKey}</td></tr>
             </tbody></table>
           </div>)}

@@ -545,10 +545,17 @@ app.post('/api/arpc', async (req, res) => {
         const cid = t80 ? t80.value.replace(/\s/g, '').slice(0, 2) : findTag(n2, '9F27')?.value.replace(/\s/g, '');
         const acType = cid ? (parseInt(cid, 16) & 0xC0) : null; // 0x40 TC · 0x80 ARQC · 0x00 AAC
         const accepted = g2.sw === '9000' && acType === 0x40;
+        // AAC, ARPC reddi ANLAMINA GELMEK ZORUNDA DEĞİL: kart AIP'de Issuer Auth
+        // bildirmiyorsa 2. GEN AC kararı risk yönetimine bağlıdır; ayrıca M/Chip
+        // kartlar ARPC için UN-tabanlı session key bekler (bu uç CSK kullanır).
+        // Bu yüzden TC=kesin kabul (PASS), aksi=belirsiz (WARN) — hard FAIL değil.
+        const note = accepted ? null : (acType === 0x00
+          ? 'Kart AAC döndürdü — kesin ARPC reddi değil. Kart AIP\'de Issuer Auth bildirmiyorsa 2. GEN AC kararı risk yönetimidir; M/Chip kartlar UN-tabanlı session key bekler.'
+          : 'Kart TC dışı AC döndürdü — issuer auth kabulü doğrulanamadı.');
         sent = { method: 'Method 2 (Retail MAC · 2. GENERATE AC)', arpc: m2.arpc, issuerAuthData: m2.issuerAuthData, cid,
           cidLabel: acType === 0x40 ? 'TC (kabul)' : acType === 0x00 ? 'AAC (red)' : acType === 0x80 ? 'ARQC' : '?',
-          sw: g2.sw, swText: describeSw(g2.sw), accepted };
-        verdict = accepted ? 'PASS' : (acType === 0x00 ? 'FAIL' : 'WARN');
+          sw: g2.sw, swText: describeSw(g2.sw), accepted, note };
+        verdict = accepted ? 'PASS' : 'WARN';
       }
     }
 

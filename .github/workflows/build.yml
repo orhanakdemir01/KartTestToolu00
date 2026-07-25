@@ -67,11 +67,23 @@ jobs:
             dist-win/KartTest-standalone.zip
           if-no-files-found: error
 
+      # Release gövdesini annotated tag mesajından üret. Aksi halde ayrı releases
+      # repo'suna yüklenirken action varsayılan olarak o repo'nun commit mesajını
+      # ("Initial commit") kullanıyor. Tag objesini açıkça çekip içeriğini yazıyoruz.
+      - name: Release notlarını tag mesajından üret
+        shell: bash
+        run: |
+          git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}" || true
+          git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" > RELEASE_NOTES.md
+          if [ ! -s RELEASE_NOTES.md ]; then echo "KartTest ${GITHUB_REF_NAME}" > RELEASE_NOTES.md; fi
+          echo "----- RELEASE_NOTES.md -----"; cat RELEASE_NOTES.md
+
       - name: GitHub Release'e yükle (ayrı PUBLIC releases repo'su)
         uses: softprops/action-gh-release@v2
         with:
           name: KartTest ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
           files: |
             dist-win/KartTest-Setup.exe
             dist-win/KartTest-standalone.zip

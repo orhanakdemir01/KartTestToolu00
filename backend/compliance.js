@@ -279,6 +279,12 @@ const RULES = [
     run: (c) => { const v = c.val('9F38'); if (!v) return NA('9F38 yok'); const d = validDol(v); return d.ok ? PASS(`${d.entries.length} tag`) : FAIL(v.slice(0, 20), 'Geçersiz DOL: ' + d.reason); } },
   { id: 'IAD-01', cat: 'DOL/FCI', sev: 'R', req: 'Issuer Application Data (9F10) makul uzunlukta (≥ 7 bayt)',
     run: (c) => { const v = c.val('9F10') || c.genac?.iad; if (!v) return NA('9F10 yok'); const n = v.length / 2; return n >= 7 ? PASS(`${n} bayt`) : WARN(`${n} bayt`, 'IAD kısa görünüyor'); } },
+  { id: 'DOL-04', cat: 'DOL/FCI', sev: 'C', spec: 'EMV Bk3 · tag 9F49 (DDOL)', req: 'DDOL (9F49) varsa geçerli DOL ve UN (9F37) içerir',
+    run: (c) => { const v = c.val('9F49'); if (!v) return (c.aipB1 & 0x20) ? PASS('DDOL yok — varsayılan (9F37) kullanılır') : NA('9F49 yok'); const d = validDol(v); if (!d.ok) return FAIL(v.slice(0, 20), 'Geçersiz DOL: ' + d.reason); return d.tags.includes('9F37') ? PASS(`${d.entries.length} tag · 9F37 (UN) içeriyor`) : WARN(`${d.entries.length} tag`, 'DDOL 9F37 (UN) içermiyor — DDA replay riski'); } },
+  { id: 'DOL-05', cat: 'DOL/FCI', sev: 'C', spec: 'EMV Bk3 · tag 97 (TDOL)', req: 'TDOL (97) varsa geçerli DOL formatında',
+    run: (c) => { const v = c.val('97'); if (!v) return NA('97 yok'); const d = validDol(v); return d.ok ? PASS(`${d.entries.length} tag`) : FAIL(v.slice(0, 20), 'Geçersiz DOL: ' + d.reason); } },
+  { id: 'FCI-02', cat: 'DOL/FCI', sev: 'C', spec: 'EMV Bk1 · 9F12 ↔ 9F11', req: 'Application Preferred Name (9F12) varsa Issuer Code Table Index (9F11) mevcut',
+    run: (c) => { if (!c.has('9F12')) return NA('9F12 yok'); return c.has('9F11') ? PASS(`9F11=${c.val('9F11')} (kod tablosu)`) : WARN('—', 'Preferred Name var ama Issuer Code Table Index (9F11) yok — gösterim kod tablosu belirsiz'); } },
 
   // ── Veri öğesi format / uzunluk (EMV Ann. A — kesin uzunluk & kodlama) ──
   { id: 'FMT-01', cat: 'Veri Formatı', sev: 'M', req: 'Application Version Number (9F08) tam 2 bayt',

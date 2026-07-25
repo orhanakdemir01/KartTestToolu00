@@ -221,6 +221,8 @@ const RULES = [
     run: (c) => { const v = c.val('5F34'); if (!v) return NA('5F34 yok'); return v.length === 2 ? PASS(v) : WARN(v, '1 bayt beklenir'); } },
   { id: 'FMT-06', cat: 'Veri Formatı', sev: 'C', spec: 'ISO/IEC 7813 · 5F30 ↔ 57 (Service Code)', req: 'Service Code (5F30) varsa 2 bayt ve Track2 hizmet koduyla tutarlı',
     run: (c) => { const v = c.val('5F30'); if (!v) return NA('5F30 yok'); if (v.length !== 4) return FAIL(v, '2 bayt beklenir (n3)'); const t2 = c.val('57'); const t2sc = t2 ? parseTrack2(t2)?.serviceCode : null; const norm = (s) => s == null ? null : parseInt(String(s).replace(/[^0-9]/g, ''), 10).toString().padStart(3, '0'); const a = norm(v), b = norm(t2sc); if (!b) return PASS(`SC=${a}`); return a === b ? PASS(`SC=${a} ↔ Track2 ✓`) : FAIL(`5F30=${a} 57=${b}`, 'Service Code uyuşmuyor'); } },
+  { id: 'FMT-07', cat: 'Veri Formatı', sev: 'M', req: 'Application Interchange Profile (82) tam 2 bayt',
+    run: (c) => { if (!c.aip) return NA('82 yok'); return c.aip.length === 4 ? PASS(c.aip) : FAIL(c.aip, `${c.aip.length / 2} bayt (2 olmalı)`); } },
 
   // ── Çapraz-alan tutarlılık (sadece "var mı" değil, alanlar birbiriyle uyumlu mu) ──
   { id: 'CON-01', cat: 'Tutarlılık', sev: 'M', req: 'AIP "CV desteklenir" (byte1 bit5) ↔ CVM List (8E) mevcut',
@@ -231,6 +233,13 @@ const RULES = [
     run: (c) => { const t2 = c.val('57'), exp = c.val('5F24'); if (!t2 || !exp) return NA('İki alan birden yok'); const sep = t2.indexOf('D'); if (sep < 0) return NA('Track2 format'); const t2yymm = t2.slice(sep + 1).slice(0, 4); const e = exp.slice(0, 4); return t2yymm === e ? PASS(`YYMM=${e} ✓`) : FAIL(`57=${t2yymm} 5F24=${e}`, 'Son kullanma uyuşmuyor'); } },
   { id: 'CON-04', cat: 'Tutarlılık', sev: 'C', spec: 'EMV Bk3 · 5F24 ≥ 5F25', req: 'Son kullanma (5F24) ≥ geçerlilik başlangıcı (5F25)',
     run: (c) => { const exp = c.val('5F24'), eff = c.val('5F25'); if (!exp || !eff) return NA('İki tarih birden yok'); if (!/^[0-9]{6}$/.test(exp) || !/^[0-9]{6}$/.test(eff)) return NA('YYMMDD değil'); return exp >= eff ? PASS(`${eff} → ${exp}`) : FAIL(`5F25=${eff} 5F24=${exp}`, 'Son kullanma, başlangıçtan önce'); } },
+  // AIP (82) yetenek bitleri ↔ ilgili veri öğeleri tutarlılığı (EMV Bk3 Ann. C1).
+  { id: 'CON-05', cat: 'Tutarlılık', sev: 'C', iface: 'contact', spec: 'EMV Bk3 · Issuer Authentication (tag 91)', req: 'AIP Issuer Authentication (byte1 bit3) ⇒ CDOL2 (8D) Issuer Auth Data (91) ister',
+    run: (c) => { if (!c.aip) return NA('AIP yok'); if (!(c.aipB1 & 0x04)) return NA('AIP issuer auth bildirmez'); const v = c.val('8D'); if (!v) return WARN('—', 'Issuer auth var ama CDOL2 (8D) yok'); const d = validDol(v); return (d.ok && d.tags.includes('91')) ? PASS('CDOL2, 91 (Issuer Auth Data) içeriyor') : WARN('CDOL2 91 içermiyor', 'Issuer auth EXTERNAL AUTHENTICATE yoluyla yapılıyor olabilir — doğrula'); } },
+  { id: 'CON-06', cat: 'Tutarlılık', sev: 'R', spec: 'EMV Bk3 · Terminal Risk Management (9F14/9F23)', req: 'AIP Terminal Risk Management (byte1 bit4) ⇒ velocity limitleri (9F14/9F23) mevcut',
+    run: (c) => { if (!c.aip) return NA('AIP yok'); if (!(c.aipB1 & 0x08)) return NA('AIP TRM bildirmez'); const lo = c.has('9F14'), hi = c.has('9F23'); return (lo && hi) ? PASS('9F14 (Lower) + 9F23 (Upper) Consecutive Offline Limit') : WARN(`9F14:${lo} 9F23:${hi}`, 'TRM var ama velocity-checking limitleri eksik (floor/random yine çalışır)'); } },
+  { id: 'CON-07', cat: 'Tutarlılık', sev: 'R', spec: 'EMV Bk3 · Ann. C1 (AIP)', req: 'AIP byte1 RFU biti (0x80) EMV çekirdeğinde sıfır',
+    run: (c) => { if (!c.aip) return NA('AIP yok'); return (c.aipB1 & 0x80) ? WARN(c.aip, 'AIP byte1 b8 (0x80) EMV çekirdeğinde RFU — sıfır beklenir (şema-özel olabilir)') : PASS('RFU bit (0x80) sıfır'); } },
 
   // ── Kart veri bütünlüğü (PAN IIN ↔ şema · uzunluk · tarih geçerliliği) ──
   { id: 'CVD-01', cat: 'Kart Veri Bütünlüğü', sev: 'C', spec: 'ISO/IEC 7812 · IIN ↔ şema', req: 'PAN IIN öneki seçilen AID şemasıyla tutarlı',

@@ -533,10 +533,17 @@ app.post('/api/arpc', async (req, res) => {
         const ea = await run('EXTERNAL AUTHENTICATE (ARPC M1)', `00820000${(m1.iad.length / 2).toString(16).padStart(2, '0').toUpperCase()}${m1.iad}`);
         out.sw = ea.sw; out.eaAccepted = ea.sw === '9000'; out.sentIad = m1.iad;
       } else {
-        const iad91 = corrupt ? flip1(m2.issuerAuthData) : m2.issuerAuthData;
+        // Tag 91 (Issuer Auth Data) ARPC yöntemi: varsayılan Method-2 (Retail MAC,
+        // ARPC‖CSU — Visa/CCD; canlı doğrulandı). M/Chip'in Method-1 (3DES, ARPC‖ARC)
+        // beklediği kartlar için `arpcVariant:1` ile denenebilir (belge bilgisi;
+        // eldeki Mastercard offline TC'yi zaten reddettiğinden doğrulanamadı).
+        const variant = req.body?.arpcVariant ? String(req.body.arpcVariant) : '2';
+        const base91 = variant === '1' ? m1.iad : m2.issuerAuthData;
+        const iad91 = corrupt ? flip1(base91) : base91;
+        out.arpcVariant = variant;
         const defs = { ...terminalDefaults(), '91': iad91, '8A': arc };
         const cdol2Data = ctx.cdol2 ? buildDol(parseDol(ctx.cdol2), defs) : (iad91 + arc);
-        const g2 = await run(`GENERATE AC 2 (issuer auth · M2${corrupt ? ' · BOZUK ARPC' : ''})`, `80AE4000${(cdol2Data.length / 2).toString(16).padStart(2, '0').toUpperCase()}${cdol2Data}00`);
+        const g2 = await run(`GENERATE AC 2 (issuer auth · M${variant}${corrupt ? ' · BOZUK ARPC' : ''})`, `80AE4000${(cdol2Data.length / 2).toString(16).padStart(2, '0').toUpperCase()}${cdol2Data}00`);
         const n2 = tlvFromResponse(g2.response).nodes;
         const t80 = findTag(n2, '80');
         out.cid = t80 ? t80.value.replace(/\s/g, '').slice(0, 2) : findTag(n2, '9F27')?.value.replace(/\s/g, '');

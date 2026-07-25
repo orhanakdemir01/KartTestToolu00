@@ -66,6 +66,7 @@ const CAT_SPEC = {
   'CVM': 'EMV Bk3 · §10.5 (CVM List 8E)',
   'Kullanım Kontrolü (AUC)': 'EMV Bk3 · Ann. A (AUC/yerel)',
   'DOL/FCI': 'EMV Bk1 §11.3 (FCI) · Bk3 §5.4 (DOL)',
+  'Veri Formatı': 'EMV Bk3 · Ann. A (veri öğesi format/uzunluk)',
   'Tutarlılık': 'EMV Bk3 · Çapraz-alan tutarlılık',
   'Mastercard CPV': 'M/Chip Requirements · CPV',
   'Visa VIS/qVSDC': 'Visa VIS 1.6 · VCPS 2.x (qVSDC)',
@@ -143,6 +144,10 @@ const RULES = [
     run: (c) => { const v = c.val('8E'); if (!v) return NA('8E yok'); return v.length >= 16 ? PASS(`X=${v.slice(0, 8)} Y=${v.slice(8, 16)}`) : FAIL(v, 'X/Y eksik'); } },
   { id: 'CVM-03', cat: 'CVM', sev: 'R', req: 'CVM List (8E) kuralları tanınan CVM kodu içerir (method düşük 6 bit)',
     run: (c) => { const v = c.val('8E'); if (!v) return NA('8E yok'); const rules = v.slice(16); if (rules.length < 4) return WARN('—', 'CVM kuralı yok'); const known = new Set([0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x1E, 0x1F]); const codes = []; for (let i = 0; i + 4 <= rules.length; i += 4) codes.push(parseInt(rules.slice(i, i + 2), 16) & 0x3F); const bad = codes.filter((m) => !known.has(m)); return bad.length ? WARN(`bilinmeyen: ${bad.map((m) => '0x' + m.toString(16)).join(',')}`, 'Tanınmayan CVM method kodu (RFU)') : PASS(`${codes.length} kural · ${[...new Set(codes)].map((m) => '0x' + m.toString(16).padStart(2, '0')).join(' ')}`); } },
+  { id: 'CVM-04', cat: 'CVM', sev: 'R', spec: 'EMV Bk3 · §10.5 (CVM koşul kodları)', req: 'CVM kural koşul kodları geçerli aralıkta (0x00–0x09; ≥0x80 şema-özel)',
+    run: (c) => { const v = c.val('8E'); if (!v) return NA('8E yok'); const rules = v.slice(16); if (rules.length < 4) return NA('CVM kuralı yok'); const conds = []; for (let i = 0; i + 4 <= rules.length; i += 4) conds.push(parseInt(rules.slice(i + 2, i + 4), 16)); const rfu = conds.filter((x) => x > 0x09 && x < 0x80); return rfu.length ? WARN(`RFU: ${rfu.map((x) => '0x' + x.toString(16)).join(',')}`, 'Tanımsız (RFU) CVM koşul kodu') : PASS(`${conds.length} koşul · ${[...new Set(conds)].map((x) => '0x' + x.toString(16).padStart(2, '0')).join(' ')}`); } },
+  { id: 'CVM-05', cat: 'CVM', sev: 'C', spec: 'EMV Bk2 · §7.1 (Enciphered Offline PIN)', req: 'Şifreli offline PIN CVM (0x04/0x05) ⇒ ICC PIN Şifreleme PK (9F2D) veya ICC PK (9F46) mevcut',
+    run: (c) => { const v = c.val('8E'); if (!v) return NA('8E yok'); const rules = v.slice(16); const methods = []; for (let i = 0; i + 4 <= rules.length; i += 4) methods.push(parseInt(rules.slice(i, i + 2), 16) & 0x3F); const encPin = methods.some((m) => m === 0x04 || m === 0x05); if (!encPin) return NA('Şifreli offline PIN CVM yok'); const ok = c.has('9F2D') || c.has('9F46'); return ok ? PASS(c.has('9F2D') ? 'ICC PIN Enc PK (9F2D)' : 'ICC PK (9F46) ile') : FAIL('—', 'Şifreli offline PIN var ama ne 9F2D ne 9F46 mevcut'); } },
 
   // ── Kullanım kontrolü / yerel veri ─────────────────────────────────────
   { id: 'USE-01', cat: 'Kullanım Kontrolü (AUC)', sev: 'R', req: 'Application Usage Control (9F07) mevcut',
@@ -167,6 +172,20 @@ const RULES = [
     run: (c) => { const v = c.val('9F38'); if (!v) return NA('9F38 yok'); const d = validDol(v); return d.ok ? PASS(`${d.entries.length} tag`) : FAIL(v.slice(0, 20), 'Geçersiz DOL: ' + d.reason); } },
   { id: 'IAD-01', cat: 'DOL/FCI', sev: 'R', req: 'Issuer Application Data (9F10) makul uzunlukta (≥ 7 bayt)',
     run: (c) => { const v = c.val('9F10') || c.genac?.iad; if (!v) return NA('9F10 yok'); const n = v.length / 2; return n >= 7 ? PASS(`${n} bayt`) : WARN(`${n} bayt`, 'IAD kısa görünüyor'); } },
+
+  // ── Veri öğesi format / uzunluk (EMV Ann. A — kesin uzunluk & kodlama) ──
+  { id: 'FMT-01', cat: 'Veri Formatı', sev: 'M', req: 'Application Version Number (9F08) tam 2 bayt',
+    run: (c) => { const v = c.val('9F08'); if (!v) return NA('9F08 yok'); return v.length === 4 ? PASS(v) : FAIL(v, `${v.length / 2} bayt (2 olmalı)`); } },
+  { id: 'FMT-02', cat: 'Veri Formatı', sev: 'C', req: 'Application Usage Control (9F07) varsa tam 2 bayt',
+    run: (c) => { const v = c.val('9F07'); if (!v) return NA('9F07 yok'); return v.length === 4 ? PASS(v) : FAIL(v, `${v.length / 2} bayt (2 olmalı)`); } },
+  { id: 'FMT-03', cat: 'Veri Formatı', sev: 'C', req: 'Application Currency Exponent (9F44) varsa 1 bayt ve ≤ 4',
+    run: (c) => { const v = c.val('9F44'); if (!v) return NA('9F44 yok'); if (v.length !== 2) return FAIL(v, '1 bayt olmalı'); const n = parseInt(v, 16); return n <= 4 ? PASS(`üs=${n}`) : WARN(`üs=${n}`, 'Olağandışı para birimi üssü (>4)'); } },
+  { id: 'FMT-04', cat: 'Veri Formatı', sev: 'C', spec: 'EMV Bk3 · §10.3 (SDA Tag List yalnızca 82)', req: 'SDA Tag List (9F4A) yalnızca AIP tag’ini (82) içerir',
+    run: (c) => { const v = c.val('9F4A'); if (!v) return NA('9F4A yok'); return v.toUpperCase() === '82' ? PASS('82 (AIP)') : FAIL(v, 'EMV: SDA Tag List yalnızca 82 içerebilir'); } },
+  { id: 'FMT-05', cat: 'Veri Formatı', sev: 'R', req: 'PAN Sequence Number (5F34) varsa 1 bayt',
+    run: (c) => { const v = c.val('5F34'); if (!v) return NA('5F34 yok'); return v.length === 2 ? PASS(v) : WARN(v, '1 bayt beklenir'); } },
+  { id: 'FMT-06', cat: 'Veri Formatı', sev: 'C', spec: 'ISO/IEC 7813 · 5F30 ↔ 57 (Service Code)', req: 'Service Code (5F30) varsa 2 bayt ve Track2 hizmet koduyla tutarlı',
+    run: (c) => { const v = c.val('5F30'); if (!v) return NA('5F30 yok'); if (v.length !== 4) return FAIL(v, '2 bayt beklenir (n3)'); const t2 = c.val('57'); const t2sc = t2 ? parseTrack2(t2)?.serviceCode : null; const norm = (s) => s == null ? null : parseInt(String(s).replace(/[^0-9]/g, ''), 10).toString().padStart(3, '0'); const a = norm(v), b = norm(t2sc); if (!b) return PASS(`SC=${a}`); return a === b ? PASS(`SC=${a} ↔ Track2 ✓`) : FAIL(`5F30=${a} 57=${b}`, 'Service Code uyuşmuyor'); } },
 
   // ── Çapraz-alan tutarlılık (sadece "var mı" değil, alanlar birbiriyle uyumlu mu) ──
   { id: 'CON-01', cat: 'Tutarlılık', sev: 'M', req: 'AIP "CV desteklenir" (byte1 bit5) ↔ CVM List (8E) mevcut',
@@ -204,6 +223,9 @@ const RULES = [
   { id: 'VZ-06', cat: 'Visa VIS/qVSDC', sev: 'C', scheme: 'Visa', iface: 'contactless', spec: 'VCPS 2.x (qVSDC) · PDOL/TTQ',
     req: 'qVSDC: PDOL (9F38) Terminal Transaction Qualifiers (9F66) ister',
     run: (c) => { const v = c.val('9F38'); if (!v) return WARN('—', 'PDOL yok — qVSDC PDOL bekler'); const d = validDol(v); if (!d.ok) return FAIL(v.slice(0, 20), 'Geçersiz PDOL'); return d.tags.includes('9F66') ? PASS('PDOL 9F66 (TTQ) içeriyor') : WARN(`${d.entries.length} tag`, 'PDOL 9F66 (TTQ) istemiyor — qVSDC için beklenir'); } },
+  { id: 'VZ-07', cat: 'Visa VIS/qVSDC', sev: 'C', scheme: 'Visa', spec: 'Visa VIS · Cryptogram Version Number (CVN)',
+    req: 'IAD (9F10) CVN yaygın Visa değerlerinden biri (10=0x0A / 18=0x12 / 22=0x16)',
+    run: (c) => { const v = c.val('9F10') || c.genac?.iad; if (!v || v.length < 6) return NA('IAD yok/kısa'); const cvn = parseInt(v.slice(4, 6), 16); const known = { 0x0A: 'CVN 10', 0x12: 'CVN 18', 0x16: 'CVN 22' }; return known[cvn] ? PASS(`${known[cvn]} (0x${cvn.toString(16).padStart(2, '0')})`) : WARN(`0x${cvn.toString(16).padStart(2, '0')}`, 'Yaygın Visa CVN (10/18/22) değil — issuer spec ile doğrula'); } },
 
   // ── Amex (AEIPS, şema-özel) ────────────────────────────────────────────
   { id: 'AX-01', cat: 'Amex', sev: 'M', scheme: 'Amex', req: 'Application Version Number (9F08) mevcut',

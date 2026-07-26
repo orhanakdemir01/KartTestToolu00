@@ -202,7 +202,7 @@ const RULES = [
     run: (c) => { const p = c.val('5A') ? clean(c.val('5A')).replace(/F+$/, '') : (parseTrack2(c.val('57') || '')?.pan); if (!p) return NA('PAN yok'); return luhnCheck(p) ? PASS(p) : FAIL(p, 'Luhn hatalı'); } },
   { id: 'STR-05', cat: 'Yapı', sev: 'M', req: 'AIP (82) mevcut', run: (c) => c.aip ? PASS(c.aip) : FAIL('—') },
   { id: 'STR-06', cat: 'Yapı', sev: 'M', req: 'AFL (94) mevcut', run: (c) => c.afl ? PASS(c.afl) : (c.iface === 'contactless' && c.aip ? WARN('—', 'Temassız: GPO AIP döndürdü, AFL yok — kernel GPO-tabanlı akışı destekler') : FAIL('—')) },
-  { id: 'STR-07', cat: 'Yapı', sev: 'M', req: 'CVM List (8E) mevcut', run: (c) => c.has('8E') ? PASS(c.val('8E').slice(0, 20) + '…') : FAIL('—') },
+  { id: 'STR-07', cat: 'Yapı', sev: 'M', req: 'CVM List (8E) mevcut', run: (c) => c.has('8E') ? PASS(c.val('8E').slice(0, 20) + '…') : (c.iface === 'contactless' ? WARN('—', 'Temassız: CVM List (8E) yok — kernel CVM (CTQ/CDCVM) kullanılır') : FAIL('—')) },
   { id: 'STR-08', cat: 'Yapı', sev: 'M', req: 'CDOL1 (8C) mevcut', iface: 'contact', run: (c) => c.has('8C') ? PASS(c.val('8C')) : FAIL('—') },
   { id: 'STR-09', cat: 'Yapı', sev: 'M', req: 'CDOL2 (8D) mevcut', iface: 'contact', run: (c) => c.has('8D') ? PASS(c.val('8D')) : FAIL('—') },
   { id: 'STR-10', cat: 'Yapı', sev: 'R', req: 'PAN Sequence Number (5F34) mevcut', run: (c) => c.has('5F34') ? PASS(c.val('5F34')) : WARN('—', 'PSN önerilir') },
@@ -372,7 +372,7 @@ const RULES = [
 
   // ── Visa VIS / qVSDC (şema-özel) ───────────────────────────────────────
   { id: 'VZ-01', cat: 'Visa VIS/qVSDC', sev: 'M', scheme: 'Visa', req: 'Application Version Number (9F08) mevcut',
-    run: (c) => c.has('9F08') ? PASS(c.val('9F08')) : FAIL('—') },
+    run: (c) => c.has('9F08') ? PASS(c.val('9F08')) : (c.iface === 'contactless' ? WARN('—', 'Temassız: 9F08 yok — sürüm IAD/kernel akışında taşınabilir') : FAIL('—')) },
   { id: 'VZ-02', cat: 'Visa VIS/qVSDC', sev: 'M', scheme: 'Visa', req: 'Issuer Application Data (9F10, VIS formatı) mevcut',
     run: (c) => { const v = c.val('9F10') || c.genac?.iad; return v ? PASS(v + (c.has('9F10') ? '' : ' (GENERATE AC)')) : (c.hasCrypto ? FAIL('—', 'IAD yok') : WARN('—', 'Kripto akışı çalışmadı')); } },
   { id: 'VZ-03', cat: 'Visa VIS/qVSDC', sev: 'R', scheme: 'Visa', req: 'IAC alanları (9F0D/0E/0F) mevcut',
@@ -456,7 +456,7 @@ const RULES = [
   { id: 'CRY-04', cat: 'ODA Kripto', sev: 'M', req: 'CDA destekleniyorsa (AIP bit1) CDA dinamik imza doğrulandı',
     run: (c) => { if (!(c.aipB1 & 0x01)) return NA('CDA desteklenmiyor'); if (!c.hasCrypto || !c.oda?.capkFound) return NA('CAPK yok'); const d = c.dyn('CDA'); if (!d) return WARN('—', 'CDA SDAD üretilmedi (bu işlem tipinde)'); const ok = d.hashMatch != null ? d.hashMatch : d.ok; return ok ? PASS('SDAD hash ✓') : (d.structOk ? WARN('yapısal ✓', 'Hash eşleşmedi') : FAIL('—', 'CDA imza doğrulanamadı')); } },
   { id: 'CRY-05', cat: 'ODA Kripto', sev: 'M', req: 'DDA destekleniyorsa (AIP bit6) DDA dinamik imza doğrulandı',
-    run: (c) => { if (!(c.aipB1 & 0x20)) return NA('DDA desteklenmiyor'); if (!c.hasCrypto || !c.oda?.capkFound) return NA('CAPK yok'); const d = c.dyn('DDA'); if (!d) return WARN('—', 'DDA imza üretilmedi (INTERNAL AUTH yok/qVSDC)'); const ok = d.hashMatch != null ? d.hashMatch : d.ok; return ok ? PASS('SDAD hash ✓') : (d.structOk ? WARN('yapısal ✓', 'Hash eşleşmedi') : FAIL('—', 'DDA imza doğrulanamadı')); } },
+    run: (c) => { if (!(c.aipB1 & 0x20)) return NA('DDA desteklenmiyor'); if (!c.hasCrypto || !c.oda?.capkFound) return NA('CAPK yok'); const d = c.dyn('DDA'); if (!d) return c.dyn('fDDA') ? NA('Temassız: DDA, fDDA olarak yapıldı → CRY-12') : WARN('—', 'DDA imza üretilmedi (INTERNAL AUTH yok/qVSDC)'); const ok = d.hashMatch != null ? d.hashMatch : d.ok; return ok ? PASS('SDAD hash ✓') : (d.structOk ? WARN('yapısal ✓', 'Hash eşleşmedi') : FAIL('—', 'DDA imza doğrulanamadı')); } },
   { id: 'CRY-06', cat: 'ODA Kripto', sev: 'R', req: 'Application Cryptogram (ARQC/TC) üretildi (GENERATE AC)',
     run: (c) => { if (!c.hasCrypto) return NA('Kripto akışı yok'); const g = c.genac; if (!g || !g.arqc) return WARN('—', 'AC üretilmedi'); return PASS(`CID ${g.cid || '?'} · AC ${g.arqc}`); } },
   { id: 'CRY-07', cat: 'ODA Kripto', sev: 'R', req: 'ARQC işlem anahtarıyla doğrulandı',
@@ -473,6 +473,8 @@ const RULES = [
     run: (c) => { const rec = c.oda?.issuerPK?.recovered; if (!c.hasCrypto || !rec || rec.length < 26 || rec.slice(0, 2).toUpperCase() !== '6A') return NA('Recovered Issuer cert yok'); const hash = rec.slice(22, 24), pk = rec.slice(24, 26); return (hash === '01' && pk === '01') ? PASS('Hash=SHA-1(01) · PK=RSA(01)') : WARN(`Hash=${hash} PK=${pk}`, 'Beklenen 01/01 dışında algoritma göstergesi'); } },
   { id: 'CRY-11', cat: 'ODA Kripto', sev: 'R', spec: 'EMV Bk2 · §6.4 (algo göstergeleri)', req: 'ICC PK cert Hash (SHA-1=01) + PK (RSA=01) algoritma göstergeleri geçerli',
     run: (c) => { const rec = c.oda?.iccPK?.recovered; if (!c.hasCrypto || !rec || rec.length < 38 || rec.slice(0, 2).toUpperCase() !== '6A') return NA('Recovered ICC cert yok'); const hash = rec.slice(34, 36), pk = rec.slice(36, 38); return (hash === '01' && pk === '01') ? PASS('Hash=SHA-1(01) · PK=RSA(01)') : WARN(`Hash=${hash} PK=${pk}`, 'Beklenen 01/01 dışında algoritma göstergesi'); } },
+  { id: 'CRY-12', cat: 'ODA Kripto', sev: 'M', iface: 'contactless', spec: 'EMV Bk2 · §6 · VCPS (fDDA)', req: 'fDDA (temassız fast DDA) dinamik imza kriptografik doğrulandı',
+    run: (c) => { if (!c.hasCrypto || !c.oda?.capkFound) return NA('CAPK yok'); const d = c.dyn('fDDA'); if (!d) return NA('fDDA imza üretilmedi (bu kart/akış)'); const ok = d.hashMatch != null ? d.hashMatch : d.ok; return ok ? PASS('SDAD hash ✓ (fDDA)') : (d.structOk ? WARN('yapısal ✓', 'fDDA hash eşleşmedi — terminal DD-input (VCPS) gerekebilir') : FAIL('—', 'fDDA imza doğrulanamadı')); } },
 
   // ── Kriptogram Sürümü (CVN) tanımlama — IAD'den CVN + bilinen algoritma ──
   { id: 'CVN-01', cat: 'Kriptogram Sürümü (CVN)', sev: 'R', spec: 'EMV Bk2 · §8.2 (CVN)', req: 'Cryptogram Version Number (CVN) tanımlanır + bilinen algoritma',

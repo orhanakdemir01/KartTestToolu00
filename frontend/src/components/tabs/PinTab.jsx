@@ -124,7 +124,7 @@ export function PinTab({ pinForm, setPinForm, changePin, pinBusy, pinResult, ses
           <label>PIN<input className="mono" inputMode="numeric" maxLength={12}
             value={verifyForm.pin} onChange={(e) => setVerifyForm({ pin: e.target.value.replace(/\D/g, '') })}
             placeholder="4-12 rakam" /></label>
-          <button className="btn" disabled={verifyBusy || !cardPresent} onClick={verifyPin}>
+          <button className="btn" style={{ alignSelf: 'flex-end' }} disabled={verifyBusy || !cardPresent} onClick={verifyPin}>
             {verifyBusy ? 'Doğrulanıyor…' : 'PIN Doğrula'}
           </button>
           {!cardPresent && <span className="muted small"> — okuyucuda kart yok</span>}

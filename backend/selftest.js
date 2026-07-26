@@ -27,6 +27,11 @@ const VECTORS = [
     run: () => retailMac('AC8729D32A1C90E76D95A56FB0AD2957',
       '0000000010000000000000000792000000000009492607260012345678390001E9A0C243A2070C00000000000000FF00000000000000FF', 2),
     expect: '09CE06536A2E9E4D' },
+  // Visa CVN 18 — EMV CSK session key + std+AIP+ATC+tam-IAD kompozisyonu (pad2).
+  { name: 'Retail MAC (pad2) · Visa CVN 18 (CSK) ARQC', kind: 'independent', ref: 'kart ground-truth · Visa CVN 18',
+    run: () => retailMac('B243AD24F74617C3E54A298D8139E50A',
+      '00000000100000000000000007920000000000094926072600123456783900005B06011203A0A8030F04000000000000000000004E3B6B9A', 2),
+    expect: '411B94ED0CA43228' },
 
   // ── ARPC — determinizm/regresyon çapası (aynı girdi → aynı çıktı) ──
   // Bağımsız değil (kendi-referans); kripto kodundaki ileride bozulmayı yakalar.

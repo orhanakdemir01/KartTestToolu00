@@ -8,7 +8,7 @@
 //
 // Kart-yer vektörleri EFEMER (işlem-başı) session key + terminal veri içerir;
 // master anahtar veya PAN İÇERMEZ (güvenli olarak repo'da saklanabilir).
-import { retailMac, kcv, tdesEcbEncrypt, computeArpc, computeArpcMethod2 } from './crypto3des.js';
+import { retailMac, kcv, tdesEcbEncrypt, computeArpc, computeArpcMethod2, deriveIccMasterKey, deriveSessionKey } from './crypto3des.js';
 
 const clean = (s) => (s || '').replace(/\s/g, '').toUpperCase();
 
@@ -32,6 +32,18 @@ const VECTORS = [
     run: () => retailMac('B243AD24F74617C3E54A298D8139E50A',
       '00000000100000000000000007920000000000094926072600123456783900005B06011203A0A8030F04000000000000000000004E3B6B9A', 2),
     expect: '411B94ED0CA43228' },
+
+  // ── TAM ZİNCİR — anahtar-türetme dahil, BAĞIMSIZ (paymentcardtools CVN18) ──
+  // Seçilen PUBLIC test IMK'sinden master→ICC(Option A)→CSK session→ARQC/ARPC tüm
+  // zinciri, bağımsız bir referans hesaplayıcıya karşı doğrulanır. Böylece
+  // deriveIccMasterKey + deriveSessionKey karta ihtiyaç duymadan kanıtlanır.
+  { name: 'Tam zincir IMK→ICC(A)→CSK→ARQC · CVN18', kind: 'independent', ref: 'paymentcardtools CVN18 hesaplayıcı',
+    run: () => retailMac(deriveSessionKey(deriveIccMasterKey('0123456789ABCDEFFEDCBA9876543210', '4111111111111111', '00'), '005B'),
+      '000000001000' + '000000000000' + '0792' + '0000000000' + '0949' + '260726' + '00' + '12345678' + '3900' + '005B' + '06011203A0A8030F0400000000000000000000', 2),
+    expect: 'FFEACC117CB15D62' },
+  { name: 'Tam zincir → ARPC Method 2 · CVN18', kind: 'independent', ref: 'paymentcardtools CVN18 hesaplayıcı',
+    run: () => computeArpcMethod2({ acKey: deriveSessionKey(deriveIccMasterKey('0123456789ABCDEFFEDCBA9876543210', '4111111111111111', '00'), '005B'), keyLevel: 'session', arqc: 'FFEACC117CB15D62', csu: '03920000' }).arpc,
+    expect: '8DD58EF4' },
 
   // ── ARPC üretimi ──
   // Method 2 — Visa CVN18 kartının issuer-auth ile KABUL ETTİĞİ ARPC (diferansiyel

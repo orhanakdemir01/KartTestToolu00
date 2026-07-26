@@ -110,6 +110,18 @@ function decodeCvmList(hex) {
   }
   return { X: hex.slice(0, 8), Y: hex.slice(8, 16), rules };
 }
+// CTQ (9F6C) byte-1 bit → anlam. Visa qVSDC; tanımlar paymentcardtools'un yetkili
+// 9F6C çözücüsünden alındı (uydurma değil). Byte-2 Visa'da tanımsız/RFU.
+const CTQ_B1 = [
+  [0x80, 'Online PIN gerekli'], [0x40, 'İmza gerekli'],
+  [0x20, 'ODA başarısızsa online (reader online-yetenekli)'],
+  [0x10, 'ODA başarısızsa arayüz değiştir (contact chip)'],
+  [0x08, 'uygulama süresi dolmuşsa online'],
+  [0x04, '(manuel) nakit için arayüz değiştir'],
+  [0x02, 'cashback için arayüz değiştir'],
+  [0x01, 'temassız ATM için geçersiz'],
+];
+const decodeCtq = (hex) => (!hex || hex.length < 2) ? null : CTQ_B1.filter(([m]) => (parseInt(hex.slice(0, 2), 16) || 0) & m).map(([, l]) => l);
 // ISO/IEC 7813 Service Code (3 hane) → semantik. Hane1=interchange, hane2=auth, hane3=servis/PIN.
 const SC1 = { '1': 'uluslararası', '2': 'uluslararası · chip', '5': 'ulusal', '6': 'ulusal · chip', '7': 'özel', '9': 'test' };
 const SC2 = { '0': 'normal', '2': 'online (issuer)', '4': 'online (bilateral hariç)' };
@@ -444,6 +456,8 @@ const RULES = [
     run: (c) => (c.aipB1 & 0x01) ? PASS('CDA destekleniyor') : WARN(c.aip, 'K2 temassız offline auth için CDA beklenir') },
   { id: 'KNL-04', cat: 'Temassız Kernel', sev: 'M', iface: 'contactless', spec: 'EMV Bk2 · temassız ODA', req: 'Temassız dinamik offline auth: AIP DDA (bit6) veya CDA (bit1) bildiriyor',
     run: (c) => { if (!c.aip) return NA('AIP yok'); return ((c.aipB1 & 0x20) || (c.aipB1 & 0x01)) ? PASS(`DDA:${!!(c.aipB1 & 0x20)} CDA:${!!(c.aipB1 & 0x01)}`) : WARN(c.aip, 'Temassız dinamik ODA (fDDA/CDA) bildirilmedi'); } },
+  { id: 'KNL-05', cat: 'Temassız Kernel', sev: 'R', iface: 'contactless', spec: 'Visa qVSDC · 9F6C (CTQ)', req: 'Card Transaction Qualifiers (9F6C) çözümlenir',
+    run: (c) => { const v = c.val('9F6C'); if (!v) return NA('9F6C (CTQ) yok'); const f = decodeCtq(v); return PASS(`${v}: ${f && f.length ? f.join(' · ') : 'hiç koşul set değil'}`); } },
 
   // ── Offline Data Authentication — KRİPTOGRAFİK doğrulama (canlı akış) ──
   // Tag varlığı değil, sertifika zinciri/imzanın matematiksel geçerliliği.

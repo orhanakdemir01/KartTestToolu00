@@ -1,9 +1,47 @@
 // "Genel Bakış" — aracın kabiliyet manifesti (şema/kernel/kural/CAPK/senaryo) +
 // hızlı erişim. Olgunlaşan araca profesyonel bir giriş; breadth'i tek yerde gösterir.
+import { useState } from 'react';
 
 const KERNEL_SHORT = (k) => (k && k !== '—' ? k.split(' ')[0] : '—');
 
-export function OverviewTab({ manifest, cardPresent, emv, selectTab }) {
+// Kripto öz-testi paneli — karta ihtiyaç duymadan bağımsız vektörlerle aracın
+// kendi kriptosunu doğrular ("kalibrasyon sertifikası").
+function SelfTestPanel({ api }) {
+  const [res, setRes] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    try { const r = await fetch(`${api}/selftest`); setRes(await r.json()); }
+    catch { setRes({ error: 'Backend bağlantısı başarısız' }); }
+    setBusy(false);
+  };
+  return (
+    <section className="panel">
+      <div className="panel-head">
+        <h2>Kripto Öz-testi</h2>
+        {res && !res.error && <span className={res.failed === 0 ? 'chip chip-on' : 'chip chip-off'}>{res.passed}/{res.total} geçti · {res.independent.passed}/{res.independent.total} bağımsız</span>}
+      </div>
+      <p className="muted small">Aracın kendi kripto matematiğini (3DES · Retail MAC · ARQC/ARPC) <b>karta ihtiyaç duymadan</b>, bağımsız referans vektörlere (NIST/klasik DES + kart ground-truth) karşı doğrular. Bir ölçüm aletinin kalibrasyon sertifikası gibi: "bir kartta çalıştı" değil, <b>kanıtlanabilir biçimde doğru</b>.</p>
+      <button className="btn" disabled={busy} onClick={run}>{busy ? 'Çalışıyor…' : 'Öz-testi Çalıştır'}</button>
+      {res?.error && <p className="err-text" style={{ marginTop: 8 }}>✗ {res.error}</p>}
+      {res && !res.error && (
+        <table className="kv-table" style={{ marginTop: 10 }}>
+          <tbody>
+            {res.results.map((r, i) => (
+              <tr key={i}>
+                <td className={r.ok ? 'st-ok' : 'st-bad'} style={{ whiteSpace: 'nowrap' }}>{r.ok ? '✓' : '✗'} <span className={`oda-chip ${r.kind === 'independent' ? 'alt' : ''}`}>{r.kind === 'independent' ? 'bağımsız' : 'regresyon'}</span></td>
+                <td className="small">{r.name}<br /><span className="muted small">{r.ref}</span></td>
+                <td className="mono small">{r.ok ? r.expected : `beklenen ${r.expected} · gelen ${r.got || '—'}`}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+export function OverviewTab({ manifest, cardPresent, emv, selectTab, api }) {
   const m = manifest || {};
   const r = m.rules || {};
   const dut = emv?.cardData;
@@ -102,6 +140,8 @@ export function OverviewTab({ manifest, cardPresent, emv, selectTab }) {
           </div>
         </section>
       )}
+
+      <SelfTestPanel api={api} />
     </>
   );
 }

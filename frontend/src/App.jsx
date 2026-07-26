@@ -1199,7 +1199,7 @@ ${apps}
           )}
 
       {activeTab === 'overview' && (
-        <OverviewTab manifest={manifest} cardPresent={cardPresent} emv={emv} selectTab={selectTab} />
+        <OverviewTab manifest={manifest} cardPresent={cardPresent} emv={emv} selectTab={selectTab} api={API} />
       )}
 
       {activeTab === 'card' && (

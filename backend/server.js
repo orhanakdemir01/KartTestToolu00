@@ -18,6 +18,7 @@ import { buildPinChange, buildUnblockVariants, buildVerifyPlaintext } from './ch
 import { discoverCardContext } from './carddiscover.js';
 import { extractCardImage } from './cardimage.js';
 import { runCompliance, ruleManifest, coverageMap } from './compliance.js';
+import { runSelfTest } from './selftest.js';
 import { parseProfilePdf } from './pdfprofile.js';
 import { listSessions, saveSession, loadSession, deleteSession } from './sessions.js';
 import { recordAndDiff, listCards, cardHistory, clearHistory } from './history.js';
@@ -218,6 +219,9 @@ app.get('/api/manifest', (req, res) => {
     coverage: coverageMap(),
   });
 });
+
+// GET /api/selftest — kripto öz-testi (karta ihtiyaç duymadan bağımsız vektörler).
+app.get('/api/selftest', (req, res) => res.json(runSelfTest()));
 
 // POST /api/scenario/run — run selected terminal-profile scenarios against the
 // card and report the resulting card decision (TC/ARQC/AAC) vs the expectation.

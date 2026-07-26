@@ -285,6 +285,8 @@ const RULES = [
     run: (c) => { const v = c.val('97'); if (!v) return NA('97 yok'); const d = validDol(v); return d.ok ? PASS(`${d.entries.length} tag`) : FAIL(v.slice(0, 20), 'Geçersiz DOL: ' + d.reason); } },
   { id: 'FCI-02', cat: 'DOL/FCI', sev: 'C', spec: 'EMV Bk1 · 9F12 ↔ 9F11', req: 'Application Preferred Name (9F12) varsa Issuer Code Table Index (9F11) mevcut',
     run: (c) => { if (!c.has('9F12')) return NA('9F12 yok'); return c.has('9F11') ? PASS(`9F11=${c.val('9F11')} (kod tablosu)`) : WARN('—', 'Preferred Name var ama Issuer Code Table Index (9F11) yok — gösterim kod tablosu belirsiz'); } },
+  { id: 'DOL-06', cat: 'DOL/FCI', sev: 'C', iface: 'contact', spec: 'EMV Bk3 · CDOL1 kripto alanları', req: 'CDOL1 (8C) standart ARQC veri alanlarını içerir (9F02·9F1A·95·5F2A·9A·9C·9F37)',
+    run: (c) => { const v = c.val('8C'); if (!v) return NA('8C yok'); const d = validDol(v); if (!d.ok) return FAIL(v.slice(0, 20), 'Geçersiz DOL: ' + d.reason); const need = ['9F02', '9F1A', '95', '5F2A', '9A', '9C', '9F37']; const miss = need.filter((t) => !d.tags.includes(t)); return miss.length ? WARN(`eksik: ${miss.join(',')}`, 'CDOL1 bazı standart ARQC alanlarını istemiyor — terminal varsayılanı devreye girer') : PASS('tüm standart ARQC alanları mevcut'); } },
 
   // ── Veri öğesi format / uzunluk (EMV Ann. A — kesin uzunluk & kodlama) ──
   { id: 'FMT-01', cat: 'Veri Formatı', sev: 'M', req: 'Application Version Number (9F08) tam 2 bayt',
@@ -459,6 +461,10 @@ const RULES = [
     run: (c) => { const rec = c.oda?.issuerPK?.recovered; if (!c.hasCrypto || !rec || rec.length < 16 || rec.slice(0, 2).toUpperCase() !== '6A') return NA('Recovered Issuer cert yok'); const e = certExpValid(rec.slice(12, 16)); if (!e) return NA('Tarih çözülemedi'); return e.valid ? PASS(`son ${e.mmyy} (MMYY)`) : WARN(`son ${e.mmyy}`, 'Issuer PK sertifikası süresi dolmuş — canlı terminalde ODA reddedilir'); } },
   { id: 'CRY-09', cat: 'ODA Kripto', sev: 'R', spec: 'EMV Bk2 · §6.4 (ICC cert son kullanma)', req: 'ICC PK Sertifikası (9F46) süresi geçmemiş',
     run: (c) => { const rec = c.oda?.iccPK?.recovered; if (!c.hasCrypto || !rec || rec.length < 28 || rec.slice(0, 2).toUpperCase() !== '6A') return NA('Recovered ICC cert yok'); const e = certExpValid(rec.slice(24, 28)); if (!e) return NA('Tarih çözülemedi'); return e.valid ? PASS(`son ${e.mmyy} (MMYY)`) : WARN(`son ${e.mmyy}`, 'ICC PK sertifikası süresi dolmuş — canlı terminalde ODA reddedilir'); } },
+  { id: 'CRY-10', cat: 'ODA Kripto', sev: 'R', spec: 'EMV Bk2 · §6.3 (algo göstergeleri)', req: 'Issuer PK cert Hash (SHA-1=01) + PK (RSA=01) algoritma göstergeleri geçerli',
+    run: (c) => { const rec = c.oda?.issuerPK?.recovered; if (!c.hasCrypto || !rec || rec.length < 26 || rec.slice(0, 2).toUpperCase() !== '6A') return NA('Recovered Issuer cert yok'); const hash = rec.slice(22, 24), pk = rec.slice(24, 26); return (hash === '01' && pk === '01') ? PASS('Hash=SHA-1(01) · PK=RSA(01)') : WARN(`Hash=${hash} PK=${pk}`, 'Beklenen 01/01 dışında algoritma göstergesi'); } },
+  { id: 'CRY-11', cat: 'ODA Kripto', sev: 'R', spec: 'EMV Bk2 · §6.4 (algo göstergeleri)', req: 'ICC PK cert Hash (SHA-1=01) + PK (RSA=01) algoritma göstergeleri geçerli',
+    run: (c) => { const rec = c.oda?.iccPK?.recovered; if (!c.hasCrypto || !rec || rec.length < 38 || rec.slice(0, 2).toUpperCase() !== '6A') return NA('Recovered ICC cert yok'); const hash = rec.slice(34, 36), pk = rec.slice(36, 38); return (hash === '01' && pk === '01') ? PASS('Hash=SHA-1(01) · PK=RSA(01)') : WARN(`Hash=${hash} PK=${pk}`, 'Beklenen 01/01 dışında algoritma göstergesi'); } },
 
   // ── Kriptogram Sürümü (CVN) tanımlama — IAD'den CVN + bilinen algoritma ──
   { id: 'CVN-01', cat: 'Kriptogram Sürümü (CVN)', sev: 'R', spec: 'EMV Bk2 · §8.2 (CVN)', req: 'Cryptogram Version Number (CVN) tanımlanır + bilinen algoritma',

@@ -110,6 +110,10 @@ function decodeCvmList(hex) {
   }
   return { X: hex.slice(0, 8), Y: hex.slice(8, 16), rules };
 }
+// ISO/IEC 7813 Service Code (3 hane) → semantik. Hane1=interchange, hane2=auth, hane3=servis/PIN.
+const SC1 = { '1': 'uluslararası', '2': 'uluslararası · chip', '5': 'ulusal', '6': 'ulusal · chip', '7': 'özel', '9': 'test' };
+const SC2 = { '0': 'normal', '2': 'online (issuer)', '4': 'online (bilateral hariç)' };
+const SC3 = { '0': 'kısıtsız · PIN gerekli', '1': 'kısıtsız', '2': 'yalnızca mal/hizmet', '3': 'yalnızca ATM · PIN', '4': 'yalnızca nakit', '5': 'mal/hizmet · PIN', '6': 'kısıtsız · varsa PIN', '7': 'mal/hizmet · varsa PIN' };
 
 // Build a lookup context over one card image (aggregating tags across all apps).
 // `crypto` (optional) = { oda, genac } from the live EMV flow, so rules can also
@@ -320,6 +324,10 @@ const RULES = [
     run: (c) => { if (!c.aip) return NA('AIP yok'); if (!(c.aipB1 & 0x08)) return NA('AIP TRM bildirmez'); const lo = c.has('9F14'), hi = c.has('9F23'); return (lo && hi) ? PASS('9F14 (Lower) + 9F23 (Upper) Consecutive Offline Limit') : WARN(`9F14:${lo} 9F23:${hi}`, 'TRM var ama velocity-checking limitleri eksik (floor/random yine çalışır)'); } },
   { id: 'CON-07', cat: 'Tutarlılık', sev: 'R', spec: 'EMV Bk3 · Ann. C1 (AIP)', req: 'AIP byte1 RFU biti (0x80) EMV çekirdeğinde sıfır',
     run: (c) => { if (!c.aip) return NA('AIP yok'); return (c.aipB1 & 0x80) ? WARN(c.aip, 'AIP byte1 b8 (0x80) EMV çekirdeğinde RFU — sıfır beklenir (şema-özel olabilir)') : PASS('RFU bit (0x80) sıfır'); } },
+  { id: 'CON-08', cat: 'Tutarlılık', sev: 'R', spec: 'ISO/IEC 7813 · Service Code', req: 'Track2 (57) hizmet kodu semantiği çözümlenir',
+    run: (c) => { const t2 = c.val('57'); if (!t2) return NA('Track2 yok'); const sc = parseTrack2(t2)?.serviceCode; if (!sc || sc.length < 3) return NA('Hizmet kodu yok'); return PASS(`SC=${sc}: ${SC1[sc[0]] || '?'} · ${SC2[sc[1]] || '?'} · ${SC3[sc[2]] || '?'}`); } },
+  { id: 'CON-09', cat: 'Tutarlılık', sev: 'C', spec: 'EMV Bk3 · 9F42 ↔ 9F44', req: 'Application Currency Code (9F42) varsa Currency Exponent (9F44) da mevcut',
+    run: (c) => { if (!c.has('9F42')) return NA('9F42 yok'); return c.has('9F44') ? PASS(`9F42=${c.val('9F42')} · 9F44=${c.val('9F44')}`) : WARN('9F44 yok', 'Para birimi var ama üssü (9F44) yok — tutar ondalık konumu belirsiz'); } },
 
   // ── Kart veri bütünlüğü (PAN IIN ↔ şema · uzunluk · tarih geçerliliği) ──
   { id: 'CVD-01', cat: 'Kart Veri Bütünlüğü', sev: 'C', spec: 'ISO/IEC 7812 · IIN ↔ şema', req: 'PAN IIN öneki seçilen AID şemasıyla tutarlı',

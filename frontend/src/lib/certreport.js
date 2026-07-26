@@ -158,11 +158,40 @@ function specCoverage(comps) {
   return Object.entries(bySpec).sort((a, b) => b[1] - a[1]);
 }
 
+// Kapsam haritası — aracın neyi test ettiği/etmediği (dürüst scope beyanı).
+function coverageSection(coverage) {
+  const SB = { full: '✓ tam', partial: '◐ kısmi', out: '○ dışı' };
+  const rows = coverage.areas.map((a) => `<tr class="s-${a.scope === 'full' ? 'pass' : a.scope === 'partial' ? 'warn' : 'na'}"><td>${esc(SB[a.scope])}</td><td>${esc(a.area)}</td><td>${esc(a.tool)}</td><td class="muted">${esc(a.out)}</td></tr>`).join('');
+  return `<p class="muted">Bu bir <b>analiz/QA aracıdır</b>; resmi sertifika (L1 elektriksel, lisanslı L2/L3 test paketleri, akreditasyon) üretmez. Kapsam: <b>${coverage.summary.full}</b> tam · <b>${coverage.summary.partial}</b> kısmi · <b>${coverage.summary.out}</b> dışı.</p>
+    <table class="grid"><tr><th>Kapsam</th><th>Alan</th><th>Araç ne yapar</th><th>Kapsam dışı</th></tr>${rows}</table>`;
+}
+
+// Kripto öz-testi (kalibrasyon) — aracın kendi kriptosunun doğrulama durumu.
+function selfTestSection(st) {
+  const rows = st.results.map((r) => `<tr class="${r.ok ? 'rp' : 'rf'}"><td>${r.ok ? '✓' : '✗'}</td><td>${r.kind === 'independent' ? 'bağımsız' : 'regresyon'}</td><td>${esc(r.name)}</td><td class="mono">${esc(r.expected)}</td><td class="muted">${esc(r.ref)}</td></tr>`).join('');
+  return `<p class="${st.failed === 0 ? 'pass' : 'fail'}"><b>${st.failed === 0 ? '✓ KALİBRASYON GEÇTİ' : '✗ KALİBRASYON HATASI'}</b> — ${st.passed}/${st.total} geçti · ${st.independent.passed}/${st.independent.total} bağımsız</p>
+    <p class="muted">Aracın kendi kripto matematiği (3DES · Retail MAC · ARQC/ARPC), değerlendirme anında bağımsız referans vektörlere (NIST/klasik DES + kart ground-truth) karşı doğrulandı.</p>
+    <table class="grid"><tr><th></th><th>Tür</th><th>Test</th><th>Beklenen</th><th>Referans</th></tr>${rows}</table>`;
+}
+
+// Issuer Authentication (ARPC) — kartın issuer auth doğrulaması (diferansiyel).
+function arpcSection(a) {
+  const V = { PASS: 'pass', FAIL: 'fail', WARN: 'warn', NA: 'na' };
+  const se = a.sent || {}, ng = a.negative || {};
+  return `<p class="${V[a.verdict] || 'na'}"><b>${a.verdict === 'PASS' ? '✓ ISSUER AUTH DOĞRULANDI' : a.verdict === 'NA' ? '○ UYGULANAMAZ' : a.verdict === 'FAIL' ? '✗ BAŞARISIZ' : '◐ ' + (a.verdict || '—')}</b> — ${esc(a.scheme || '')} · ${esc((a.methodUsed || '').toUpperCase())}</p>` + kv([
+    ['ARQC (karttan)', a.arqc], ['ARQC doğrulandı', a.arqcVerified ? '✓ ' + (a.arqcMethod || '') : '—'],
+    ['ARPC (M2)', a.method2?.arpc], ['Doğru ARPC → kart', se.cid ? `CID ${se.cid} (${se.cidLabel})` : '—'],
+    ['Bozuk ARPC → kart (negatif)', ng.cid ? `CID ${ng.cid} (${ng.cidLabel}) · ${ng.rejected ? 'reddedildi ✓' : 'reddedilmedi ✗'}` : '—'],
+    ['Not', se.note],
+  ]);
+}
+
 export function buildCertReportHtml(ctx) {
   const {
     meta = {}, dut, card, emv, testResult, trace = [], readers = [], mode,
     compContact, compContactless, odaContact, odaContactless,
     pinResult, verifyResult, scenarioResult,
+    coverage, selfTest, arpcResult,
   } = ctx;
   const ts = new Date().toLocaleString('tr-TR');
 
@@ -192,6 +221,9 @@ export function buildCertReportHtml(ctx) {
       <table class="grid"><tr><th>Spec Kaynağı</th><th>Kural</th></tr>${specRows.map(([s, cnt]) => `<tr><td>${esc(s)}</td><td>${cnt}</td></tr>`).join('')}</table></section>`;
   }
 
+  // Kapsam haritası — dürüst scope beyanı
+  if (coverage?.areas?.length) body += `<section>${H('Kapsam Haritası')}${coverageSection(coverage)}</section>`;
+
   // Uyumluluk
   if (compContact?.compliance || compContactless?.compliance) {
     body += `<section>${H('Perso Uyumluluk / Sertifikasyon')}`;
@@ -206,6 +238,11 @@ export function buildCertReportHtml(ctx) {
     if (odaContact?.oda) body += odaSection(odaContact, '🔌 Temaslı');
     if (odaContactless?.oda) body += odaSection(odaContactless, '📶 Temassız');
     body += `</section>`;
+  }
+
+  // Issuer Authentication (ARPC)
+  if (arpcResult && !arpcResult.error && arpcResult.verdict) {
+    body += `<section>${H('Issuer Authentication (ARPC)')}${arpcSection(arpcResult)}</section>`;
   }
 
   // EMV veri + kriptogram
@@ -235,6 +272,9 @@ export function buildCertReportHtml(ctx) {
       testResult.results.map((r) => `<tr class="${r.pass ? 'rp' : 'rf'}"><td>${r.pass ? '✓' : '✗'}</td><td>${esc(r.name)}</td><td class="mono">${esc(r.expectedSw)}</td><td class="mono">${esc(r.actualSw)}</td><td>${esc(r.reason)}</td></tr>`).join('') +
       `</table></section>`;
   }
+
+  // Kripto öz-testi (kalibrasyon) — araç güven sinyali
+  if (selfTest?.results?.length) body += `<section>${H('Kripto Öz-testi (Kalibrasyon)')}${selfTestSection(selfTest)}</section>`;
 
   // Onay / imza bloğu (resmi sertifikasyon belgesi öğesi)
   body += `<section class="sign">${H('Onay')}

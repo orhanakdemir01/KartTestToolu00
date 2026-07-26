@@ -116,6 +116,7 @@ function App() {
   const [trace, setTrace] = useState([]);
   const [activeTab, setActiveTab] = useState('overview');
   const [manifest, setManifest] = useState(null);
+  const [selfTest, setSelfTest] = useState(null);
   const [groupLast, setGroupLast] = useState({}); // remember last sub-tab per group
   const [traceOpen, setTraceOpen] = useState(false);
   const [uid, setUid] = useState(null);
@@ -350,6 +351,7 @@ function App() {
   useEffect(() => { loadSessionsList(); }, []);
   useEffect(() => { loadHistoryCards(); }, []);
   useEffect(() => { fetch(`${API}/manifest`).then((r) => r.json()).then(setManifest).catch(() => {}); }, []);
+  useEffect(() => { fetch(`${API}/selftest`).then((r) => r.json()).then(setSelfTest).catch(() => {}); }, []);
 
   // ── Send APDU ──
   const send = async (cmdArg) => {
@@ -1039,6 +1041,7 @@ ${apps}
     card, emv, testResult, trace, readers, mode,
     compContact, compContactless, odaContact, odaContactless,
     pinResult, verifyResult, scenarioResult,
+    coverage: manifest?.coverage, selfTest, arpcResult,
   });
 
   const downloadReport = () => {

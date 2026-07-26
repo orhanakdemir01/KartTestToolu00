@@ -17,7 +17,7 @@ import { listKeysMasked, addKeySet, updateKeySet, deleteKeySet, getKeySet, findE
 import { buildPinChange, buildUnblockVariants, buildVerifyPlaintext } from './changepin.js';
 import { discoverCardContext } from './carddiscover.js';
 import { extractCardImage } from './cardimage.js';
-import { runCompliance, ruleManifest } from './compliance.js';
+import { runCompliance, ruleManifest, coverageMap } from './compliance.js';
 import { parseProfilePdf } from './pdfprofile.js';
 import { listSessions, saveSession, loadSession, deleteSession } from './sessions.js';
 import { recordAndDiff, listCards, cardHistory, clearHistory } from './history.js';
@@ -215,6 +215,7 @@ app.get('/api/manifest', (req, res) => {
     rules: { count: rm.count, categories: rm.categories.length, sev: rm.sev },
     capkCount: keys.length,
     scenarioCount: TERMINAL_PRESETS.length,
+    coverage: coverageMap(),
   });
 });
 

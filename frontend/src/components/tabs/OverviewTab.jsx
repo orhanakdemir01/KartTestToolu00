@@ -72,6 +72,36 @@ export function OverviewTab({ manifest, cardPresent, emv, selectTab }) {
         </div>
         <p className="muted small" style={{ marginTop: 6 }}>CA anahtarı 0 olan şemalarda ODA kripto doğrulaması için "CA Anahtarları" sekmesinden anahtar eklenmeli.</p>
       </section>
+
+      {m.coverage && (
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Kapsam Haritası</h2>
+            <span className="muted small">
+              <b className="st-ok">{m.coverage.summary.full}</b> tam · <b className="st-warn">{m.coverage.summary.partial}</b> kısmi · <b className="muted">{m.coverage.summary.out}</b> kapsam dışı
+            </span>
+          </div>
+          <p className="muted small">EMV sertifikasyon katmanlarına göre aracın neyi test ettiği <b>ve neyi etmediği</b> — tam şeffaf, dürüst kapsam. Bu bir <b>analiz/QA aracıdır</b>; resmi sertifika (L1 elektriksel, lisanslı L2/L3 test paketleri, akreditasyon) üretmez.</p>
+          <div className="capk-scroll">
+            <table className="capk-table">
+              <thead><tr><th>Alan</th><th className="c">Kapsam</th><th>Araç ne yapar</th><th>Kapsam dışı</th></tr></thead>
+              <tbody>
+                {m.coverage.areas.map((a, i) => {
+                  const badge = a.scope === 'full' ? { cls: 'st-ok', t: '✓ tam' } : a.scope === 'partial' ? { cls: 'st-warn', t: '◐ kısmi' } : { cls: 'muted', t: '○ dışı' };
+                  return (
+                    <tr key={i}>
+                      <td className="b small">{a.area}</td>
+                      <td className={`c small ${badge.cls} b`}>{badge.t}</td>
+                      <td className="small">{a.tool}</td>
+                      <td className="small muted">{a.out}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </>
   );
 }

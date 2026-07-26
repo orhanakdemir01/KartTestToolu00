@@ -521,3 +521,27 @@ export function ruleManifest() {
     sev: bySev,
   };
 }
+
+// Kapsam haritası — aracın EMV sertifikasyon katmanlarına göre neyi test ettiği ve
+// neyi ETMEDİĞİ (DÜRÜST scope). 'full' tam kapsanır · 'partial' kısmen · 'out' kapsam
+// dışı. Amaç: rakip kapalı-kutu araçların aksine tam şeffaf kapsam beyanı.
+const COVERAGE = [
+  { area: 'L1 · Fiziksel / Elektriksel', scope: 'partial', tool: 'ATR + protokol (T=0/T=1) + temaslı/temassız tespiti', out: 'Dalga formu, zamanlama, RF alan/güç ölçümü (özel donanım gerekir)' },
+  { area: 'L1.5 · APDU / İletişim', scope: 'full', tool: 'Tam APDU zinciri, TLV çözümleme, SW yorumlama, ham konsol', out: '—' },
+  { area: 'L2 · Uygulama Seçimi', scope: 'full', tool: 'PPSE/PSE/AID seçimi, FCI + DF Name doğrulama', out: '—' },
+  { area: 'L2 · İşlem Akışı', scope: 'full', tool: 'GPO, AIP/AFL, READ RECORD, CDOL/DOL, GENERATE AC', out: '—' },
+  { area: 'L2 · Offline Veri Doğrulama (ODA)', scope: 'full', tool: 'SDA/DDA/CDA tag + sertifika zinciri (recover · uzunluk · son-kullanma · algo) + dinamik imza kripto', out: 'SDA statik-imza kripto (SDA destekli kart yoksa)' },
+  { area: 'L2 · Kart Doğrulama (CVM)', scope: 'full', tool: 'CVM List format + insan-okunur çözüm + offline PIN kripto tutarlılığı', out: 'Canlı PIN-pad etkileşimi' },
+  { area: 'L2 · Kriptogram (ARQC)', scope: 'full', tool: 'Çok-şemalı ARQC doğrulama (CSK · M/Chip · CVN10-UDK) + session-key türetme', out: '—' },
+  { area: 'L2 · Issuer Auth (ARPC)', scope: 'full', tool: 'ARPC üretimi + diferansiyel karta-doğrulatma (doğru→TC ∧ bozuk→AAC negatif test)', out: '—' },
+  { area: 'L2 · Risk / Aksiyon Analizi', scope: 'full', tool: 'IAC decode + Terminal Action Analysis (koşul → TC/ARQC/AAC)', out: 'Terminal TAC yapılandırması (profil-bağımlı)' },
+  { area: 'L2 · Kernel Uygunluk', scope: 'partial', tool: 'EMVCo Kernel (C-2…C-8) farkındalığı + temassız kural matrisi', out: 'EMVCo Type Approval kernel test paketi (lisanslı)' },
+  { area: 'L3 · Uçtan-uca / Şema', scope: 'partial', tool: 'Issuer auth + L2/L3 senaryo runner (TC/ARQC/AAC)', out: 'Lisanslı şema test paketleri (VTS · MTIP · ADVT)' },
+  { area: 'Perso / Veri Bütünlüğü', scope: 'full', tool: 'PAN/IIN↔şema · tarih · AIP/AUC/format · CVN tanımlama · spec-izlenebilir kural motoru', out: '—' },
+  { area: 'Akreditasyon', scope: 'out', tool: 'Açık, spec-izlenebilir kural motoru (denetlenebilir)', out: 'Aracın EMVCo/şema qualification\'ı — bu bir analiz/QA aracıdır, resmi sertifika ÜRETMEZ' },
+];
+export function coverageMap() {
+  const by = { full: 0, partial: 0, out: 0 };
+  for (const a of COVERAGE) by[a.scope]++;
+  return { areas: COVERAGE, summary: by };
+}

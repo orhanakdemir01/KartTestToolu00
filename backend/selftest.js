@@ -33,14 +33,18 @@ const VECTORS = [
       '00000000100000000000000007920000000000094926072600123456783900005B06011203A0A8030F04000000000000000000004E3B6B9A', 2),
     expect: '411B94ED0CA43228' },
 
-  // ── ARPC — determinizm/regresyon çapası (aynı girdi → aynı çıktı) ──
-  // Bağımsız değil (kendi-referans); kripto kodundaki ileride bozulmayı yakalar.
-  { name: 'ARPC Method 1 (3DES · ARQC⊕ARC)', kind: 'regression', ref: 'kendi-referans (regresyon çapası)',
+  // ── ARPC üretimi ──
+  // Method 2 — Visa CVN18 kartının issuer-auth ile KABUL ETTİĞİ ARPC (diferansiyel
+  // PASS: doğru ARPC→TC, bozuk→AAC). Kart, ARPC'mizin doğruluğunu TC dönerek
+  // kanıtladı → BAĞIMSIZ (kart-doğrulamalı).
+  { name: 'ARPC Method 2 (Retail MAC · ARQC‖CSU)[:4] · KART-KABUL', kind: 'independent', ref: 'kart-KABUL · Visa CVN18 issuer-auth (diferansiyel PASS/TC)',
+    run: () => computeArpcMethod2({ acKey: 'DF1238237772774A3A7CC6249A05BA01', keyLevel: 'session', arqc: 'D1AB8E8109A4D56D', csu: '03920000' }).arpc,
+    expect: '50E21C41' },
+  // Method 1 — 3DES(SKac, ARQC⊕ARC). M1 kabul eden kart yok (Amex/EXTERNAL AUTH);
+  // regresyon çapası — temel 3DES yukarıda bağımsız kanıtlı (transitif kapsam).
+  { name: 'ARPC Method 1 (3DES · ARQC⊕ARC)', kind: 'regression', ref: 'kendi-referans · 3DES bağımsız kanıtlı (transitif)',
     run: () => computeArpc({ acKey: 'AC8729D32A1C90E76D95A56FB0AD2957', keyLevel: 'session', arqc: '09CE06536A2E9E4D', arc: '3030' }).arpc,
     expect: 'AFC33D616213F36C' },
-  { name: 'ARPC Method 2 (Retail MAC · ARQC‖CSU)[:4]', kind: 'regression', ref: 'kendi-referans (regresyon çapası)',
-    run: () => computeArpcMethod2({ acKey: 'AC8729D32A1C90E76D95A56FB0AD2957', keyLevel: 'session', arqc: '09CE06536A2E9E4D', csu: '03920000' }).arpc,
-    expect: 'B74C265B' },
 ];
 
 export function runSelfTest() {

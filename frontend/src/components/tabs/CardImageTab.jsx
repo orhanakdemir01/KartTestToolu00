@@ -146,6 +146,26 @@ export function CardImageTab({ cardImage, imageBusy, cardPresent, extractImage, 
   const [profileName, setProfileName] = useState('');
   const [profFilter, setProfFilter] = useState('all');
   const [diff, setDiff] = useState(null);
+  // Altın referans — onaylı bir kart profilini tarayıcıda (localStorage) sakla,
+  // sonraki kartları alan-alan buna karşı diff'le (perso sürüklenmesi yakalama).
+  const GKEY = 'karttest-golden-refs';
+  const loadGolden = () => { try { return JSON.parse(localStorage.getItem(GKEY) || '[]'); } catch { return []; } };
+  const [goldenRefs, setGoldenRefs] = useState(loadGolden);
+  const [goldenName, setGoldenName] = useState('');
+  const [goldenSel, setGoldenSel] = useState(-1);
+  const [goldenDiff, setGoldenDiff] = useState(null);
+  const persistGolden = (list) => { localStorage.setItem(GKEY, JSON.stringify(list)); setGoldenRefs(list); };
+  const saveGolden = () => {
+    if (!d?.applications?.length) return;
+    const name = goldenName.trim() || `${d.applications[0]?.scheme || 'kart'}-${new Date().toISOString().slice(0, 10)}`;
+    const list = [...goldenRefs.filter((g) => g.name !== name), { name, savedAt: new Date().toISOString(), image: d }];
+    persistGolden(list); setGoldenName(''); setGoldenSel(list.length - 1); setGoldenDiff(null);
+  };
+  const deleteGolden = (name) => { persistGolden(goldenRefs.filter((g) => g.name !== name)); setGoldenSel(-1); setGoldenDiff(null); };
+  const compareGolden = () => {
+    const ref = goldenRefs[goldenSel];
+    setGoldenDiff(ref && d?.applications?.length ? diffCards(ref.image, d) : null);
+  };
   // Compare the expected profile against the card. If either interface was read
   // (dual mode), compare against contact and contactless separately; otherwise
   // fall back to the single Kart Image extraction.
@@ -289,7 +309,7 @@ export function CardImageTab({ cardImage, imageBusy, cardPresent, extractImage, 
     const a = document.createElement('a');
     a.href = url; a.download = `perso-compare-${Date.now()}.${ext}`; a.click(); URL.revokeObjectURL(url);
   };
-  const MODES = [['image', 'Kart Image'], ['iface', 'Dual-Interface'], ['diff', 'Kart ↔ Kart'], ['profile', 'Profil Karşılaştır']];
+  const MODES = [['image', 'Kart Image'], ['iface', 'Dual-Interface'], ['diff', 'Kart ↔ Kart'], ['golden', 'Altın Referans'], ['profile', 'Profil Karşılaştır']];
   const PHASE_MSG = {
     contact: '🔌 Contact okunuyor…',
     remove: '✋ Kartı temaslı yuvadan ÇIKARIN — bekleniyor… (çıkarılmazsa sadece contact alınır)',
@@ -418,6 +438,29 @@ export function CardImageTab({ cardImage, imageBusy, cardPresent, extractImage, 
         {diff?.contact && cardDiffTable(diff.contact, '🔌 CONTACT (temaslı)')}
         {diff?.contactless && cardDiffTable(diff.contactless, '📶 CONTACTLESS (temassız)')}
         {diff && !diff.contact && !diff.contactless && <p className="muted small" style={{ marginTop: 12 }}>Karşılaştırılacak eşleşen arayüz yok — her iki kartın da aynı arayüzü (ör. ikisi de contact) okunmalı.</p>}
+      </>}
+
+      {/* ── Mod: Altın Referans ── */}
+      {mode === 'golden' && <>
+        <p className="muted small">Onaylı bir kartı <b>altın referans</b> olarak kaydet; sonraki kartları alan-alan buna karşı karşılaştır. Kural motorunun "geçerli ama referanstan farklı" olarak kaçırabileceği <b>perso sürüklenmesini</b> yakalar. Referanslar tarayıcıda saklanır (localStorage). Diff'te <b>A=referans</b>, <b>B=mevcut kart</b> — "Sadece A" = kartta eksik (olası perso hatası).</p>
+        <div className="capk-add-row">
+          <label>Referans adı<input value={goldenName} onChange={(e) => setGoldenName(e.target.value)} placeholder="(boş = şema-tarih)" /></label>
+          <button className="btn" disabled={!d?.applications?.length} onClick={saveGolden} title={!d?.applications?.length ? 'Önce "Kart Image" ile kart oku' : undefined}>Mevcut Kartı Referans Kaydet</button>
+        </div>
+        {goldenRefs.length > 0 && (
+          <div className="capk-add-row">
+            <label>Referans ({goldenRefs.length})
+              <select value={goldenSel} onChange={(e) => { setGoldenSel(+e.target.value); setGoldenDiff(null); }}>
+                <option value={-1}>— seç —</option>
+                {goldenRefs.map((g, i) => <option key={i} value={i}>{g.name} · {g.image?.applications?.[0]?.scheme || '?'} · {g.image?.totalTags} tag · {g.savedAt?.slice(0, 10)}</option>)}
+              </select>
+            </label>
+            <button className="btn" disabled={goldenSel < 0 || !d?.applications?.length} onClick={compareGolden}>Mevcut Kartla Karşılaştır</button>
+            {goldenSel >= 0 && <button className="btn-sm ghost" onClick={() => deleteGolden(goldenRefs[goldenSel].name)}>Sil</button>}
+          </div>
+        )}
+        {!d?.applications?.length && <p className="muted small">Karşılaştırmak/kaydetmek için önce <b>Kart Image</b> ile bir kart oku.</p>}
+        {goldenDiff && cardDiffTable(goldenDiff, `Altın referans "${goldenRefs[goldenSel]?.name}" ↔ mevcut kart`)}
       </>}
 
       {/* ── Mod 3: Profil Karşılaştır ── */}

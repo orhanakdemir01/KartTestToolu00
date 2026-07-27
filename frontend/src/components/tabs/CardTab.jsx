@@ -1,5 +1,63 @@
 import { OdaPanel } from '../OdaPanel.jsx';
 
+// Şema-özel kart yüzü rengi (gerçek marka tonlarına yakın).
+const SCHEME_BG = {
+  Visa: 'linear-gradient(135deg,#1a1f71 0%,#3d4db0 55%,#151a5e 100%)',
+  Mastercard: 'linear-gradient(135deg,#2b2d31 0%,#45484d 55%,#191a1c 100%)',
+  Amex: 'linear-gradient(135deg,#0a86b8 0%,#0a4d68 100%)',
+  Troy: 'linear-gradient(135deg,#0aa2a2 0%,#00595e 100%)',
+  UnionPay: 'linear-gradient(135deg,#e21836 0%,#5a1e6b 50%,#01538f 100%)',
+  Discover: 'linear-gradient(135deg,#e8721c 0%,#b64a00 100%)',
+  JCB: 'linear-gradient(135deg,#0b4ea2 0%,#8e1b3a 50%,#0a8f3c 100%)',
+};
+
+// Şema marka işareti — Visa/Mastercard tanınır biçimde, diğerleri metin.
+function SchemeMark({ scheme }) {
+  if (scheme === 'Mastercard') return (
+    <span className="sm-mc"><svg width="44" height="28" viewBox="0 0 44 28" aria-label="Mastercard">
+      <circle cx="17" cy="14" r="12" fill="#eb001b" /><circle cx="27" cy="14" r="12" fill="#f79e1b" fillOpacity="0.9" />
+    </svg></span>
+  );
+  if (scheme === 'Visa') return <span className="sm-visa">VISA</span>;
+  if (scheme === 'Amex') return <span className="sm-txt">AMEX</span>;
+  return <span className="sm-txt">{scheme || 'EMV'}</span>;
+}
+
+// Kart yüzü görseli — kart okunmadan placeholder, okununca üzerine dolar.
+function EmvCardVisual({ cardData, scheme, contactless }) {
+  const has = !!cardData?.pan;
+  const bg = SCHEME_BG[scheme];
+  return (
+    <div className={`emv-card ${has ? '' : 'empty'}`} style={bg ? { background: bg } : undefined}>
+      <div className="emv-top">
+        {contactless && (
+          <span className="emv-nfc" title="temassız">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+              <path d="M6 5a8 8 0 0 1 0 10" /><path d="M9.5 7a4.5 4.5 0 0 1 0 6" /><path d="M13 9a1.5 1.5 0 0 1 0 2" />
+            </svg>
+          </span>
+        )}
+        <SchemeMark scheme={scheme} />
+      </div>
+      <div className="emv-chip" aria-label="çip">
+        <svg width="38" height="28" viewBox="0 0 46 34" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs><linearGradient id="emvChip" x1="0" y1="0" x2="1" y2="1"><stop stopColor="#f5d97a" /><stop offset="1" stopColor="#c99a2e" /></linearGradient></defs>
+          <rect x="0.5" y="0.5" width="45" height="33" rx="6" fill="url(#emvChip)" stroke="rgba(0,0,0,0.18)" />
+          <rect x="6" y="5" width="34" height="24" rx="3" fill="none" stroke="rgba(0,0,0,0.28)" />
+          <line x1="6" y1="17" x2="40" y2="17" stroke="rgba(0,0,0,0.28)" />
+          <line x1="17" y1="5" x2="17" y2="29" stroke="rgba(0,0,0,0.28)" />
+          <line x1="29" y1="5" x2="29" y2="29" stroke="rgba(0,0,0,0.28)" />
+        </svg>
+      </div>
+      <div className="emv-pan mono">{has ? cardData.panFormatted : '•••• •••• •••• ••••'}</div>
+      <div className="emv-bottom">
+        <div><span className="emv-lbl">KART SAHİBİ</span><span>{has ? (cardData.cardholderName || '—') : '—'}</span></div>
+        <div><span className="emv-lbl">VALID THRU</span><span className="mono">{has ? (cardData.expiry || '—') : '••/••'}</span></div>
+      </div>
+    </div>
+  );
+}
+
 // "Kart & EMV" tab: EMV read flow + card mock + contactless UID + ATR decode
 export function CardTab({
   emv, emvBusy, cardPresent, runEmv,
@@ -27,33 +85,13 @@ export function CardTab({
             </button>
           </div>
         </div>
-        {!emv && <p className="muted small">PPSE → SELECT AID → GPO → READ RECORD zincirini çalıştırır ve kart verisini çıkarır.</p>}
         {emv?.error && <p className="err-text">{emv.error}</p>}
-        {emv?.cardData?.pan && (
-          <div className="emv-result">
-            <div className="emv-card">
-              <div className="emv-top">
-                <span className="emv-brand">{emv.cardData.scheme || emv.applications?.[0]?.label || 'EMV'}</span>
-              </div>
-              <div className="emv-chip" aria-label="çip">
-                <svg width="38" height="28" viewBox="0 0 46 34" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <defs><linearGradient id="emvChip" x1="0" y1="0" x2="1" y2="1"><stop stopColor="#f5d97a" /><stop offset="1" stopColor="#c99a2e" /></linearGradient></defs>
-                  <rect x="0.5" y="0.5" width="45" height="33" rx="6" fill="url(#emvChip)" stroke="rgba(0,0,0,0.18)" />
-                  <rect x="6" y="5" width="34" height="24" rx="3" fill="none" stroke="rgba(0,0,0,0.28)" />
-                  <line x1="6" y1="17" x2="40" y2="17" stroke="rgba(0,0,0,0.28)" />
-                  <line x1="17" y1="5" x2="17" y2="29" stroke="rgba(0,0,0,0.28)" />
-                  <line x1="29" y1="5" x2="29" y2="29" stroke="rgba(0,0,0,0.28)" />
-                </svg>
-              </div>
-              <div className="emv-pan mono">{emv.cardData.panFormatted}</div>
-              <div className="emv-bottom">
-                <div><span className="emv-lbl">KART SAHİBİ</span><span>{emv.cardData.cardholderName || '—'}</span></div>
-                <div><span className="emv-lbl">SKT</span><span className="mono">{emv.cardData.expiry || '—'}</span></div>
-                <div><span className="emv-lbl">LUHN</span><span className={emv.cardData.luhnValid ? 'luhn-ok' : 'luhn-bad'}>{emv.cardData.luhnValid ? '✓ Geçerli' : '✗ Hatalı'}</span></div>
-              </div>
-            </div>
+        <div className="emv-result">
+          <EmvCardVisual cardData={emv?.cardData} scheme={emv?.cardData?.scheme || emv?.applications?.[0]?.scheme} contactless={card?.contactless} />
+          {emv?.cardData?.pan ? (
             <table className="kv-table">
               <tbody>
+                <tr><td>LUHN</td><td><span className={emv.cardData.luhnValid ? 'capk-ok' : 'luhn-bad'}>{emv.cardData.luhnValid ? '✓ Geçerli' : '✗ Hatalı'}</span></td></tr>
                 <tr><td>AID</td><td className="mono">{emv.applications?.[0]?.aid}</td></tr>
                 <tr><td>AIP</td><td className="mono">{emv.aip}</td></tr>
                 <tr><td>AFL</td><td className="mono">{emv.afl}</td></tr>
@@ -72,8 +110,13 @@ export function CardTab({
                 )}
               </tbody>
             </table>
-          </div>
-        )}
+          ) : (
+            <div className="emv-hint">
+              <p className="muted small">{!emv ? 'PPSE → SELECT AID → GPO → READ RECORD zincirini çalıştırır ve kart verisini çıkarır.' : 'Kart verisi çıkarılamadı.'}</p>
+              <p className="muted small">Yukarıdaki <b>▶ EMV Akışını Çalıştır</b> ile kartı oku — bilgiler kartın üzerine dolar.</p>
+            </div>
+          )}
+        </div>
         {emv?.analysis && Object.keys(emv.analysis).length > 0 && (
           <div className="analysis">
             {emv.analysis.aip?.length > 0 && (

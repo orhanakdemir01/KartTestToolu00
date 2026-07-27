@@ -357,6 +357,13 @@ a:hover { color: #1a9850; text-decoration: underline; }
 .emv-bottom > div { display: flex; flex-direction: column; gap: 2px; }
 .emv-lbl { font-size: 9px; color: #9aa6cf; letter-spacing: 1px; }
 .emv-bottom span:not(.emv-lbl) { font-size: 15px; color: #fff; }
+.emv-card.empty { background: linear-gradient(135deg,#414a70 0%,#333c5c 60%,#3a4468 100%); }
+.emv-card.empty .emv-pan, .emv-card.empty .emv-bottom span:not(.emv-lbl) { opacity: 0.5; }
+.emv-nfc { color: rgba(255,255,255,0.92); margin-right: auto; line-height: 0; display: inline-flex; }
+.sm-visa { font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-weight: 800; font-size: 23px; color: #fff; letter-spacing: 0.5px; text-shadow: 0 1px 2px rgba(0,0,0,0.35); }
+.sm-mc { line-height: 0; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3)); }
+.sm-txt { font-size: 15px; font-weight: 800; color: #fff; letter-spacing: 1px; text-shadow: 0 1px 1px rgba(0,0,0,0.3); }
+.emv-hint { display: flex; flex-direction: column; gap: 8px; justify-content: center; padding: 8px 4px; }
 .kv-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .kv-table td { padding: 7px 10px; border-bottom: 1px solid #f1f3f1; }
 .kv-table td:first-child { color: #8b9199; width: 120px; }

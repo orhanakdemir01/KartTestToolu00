@@ -606,11 +606,20 @@ app.post('/api/arpc', async (req, res) => {
         if (tc1 && negAac) { verdict = 'PASS'; sent.note = 'Diferansiyel ✓ — doğru ARPC kabul (TC), bozuk ARPC red (AAC): kart issuer authentication\'ı KRİPTOGRAFİK olarak doğruluyor.'; }
         else if (tc1 && !r2.error && r2.acType === 0x40) { verdict = 'NA'; sent.note = 'Kart bozuk ARPC\'ye de TC döndü → ARPC\'yi doğrulamıyor; TC yalnızca risk-onay kararıdır (issuer auth uygulanmıyor).'; }
         else if (!tc1) {
-          verdict = 'WARN';
           const same = !r2.error && r2.acType === r1.acType;
-          sent.note = r1.arqcVerified
-            ? `Session key DOĞRULANDI (ARQC eşleşti: ${r1.arqcMethod}) ama kart doğru ARPC'ye ${cidLabel(r1.acType)} döndü${same ? ' — bozuk ARPC ile AYNI sonuç, yani ARPC değeri kararı değiştirmiyor' : ''} ⇒ kart bu terminal profilinde offline TC'yi ARPC'den bağımsız reddediyor (risk/politika kararı); issuer-auth doğrulaması gözlenemedi.`
-            : `Kart doğru ARPC'ye ${cidLabel(r1.acType)} döndü ve ARQC doğrulanamadı — bu PAN için doğru issuer anahtarı yüklü olmayabilir.`;
+          if (r1.arqcVerified && same) {
+            // Doğru ve bozuk ARPC AYNI sonucu verdi → ARPC değeri kartın kararını
+            // ETKİLEMİYOR; session key de kesin doğru (ARQC eşleşti) → kripto sorunu YOK.
+            // Kart offline TC vermiyor (online-zorunlu olabilir): test UYGULANAMAZ, kusur değil.
+            verdict = 'NA';
+            sent.note = `Kart doğru ve bozuk ARPC'ye AYNI yanıtı (${cidLabel(r1.acType)}) verdi → ARPC değeri kararı etkilemiyor. Session key DOĞRULANDI (${r1.arqcMethod}) — KRİPTO SORUNU YOK. Kart bu profilde offline TC vermiyor (online-zorunlu yapılandırma olabilir); issuer-auth bu kartta gözlenemez — KART KUSURU DEĞİL, test kapsam dışı. (Krş: Visa kartı offline TC verip PASS aldı.)`;
+          } else if (!r1.arqcVerified) {
+            verdict = 'WARN';
+            sent.note = `Kart doğru ARPC'ye ${cidLabel(r1.acType)} döndü ve ARQC doğrulanamadı — bu PAN için doğru issuer anahtarı yüklü olmayabilir.`;
+          } else {
+            verdict = 'WARN';
+            sent.note = `Kart doğru ARPC'ye ${cidLabel(r1.acType)}, bozuk ARPC'ye ${cidLabel(r2.acType)} döndü — beklenmedik; issuer-auth kesin doğrulanamadı.`;
+          }
         }
         else { verdict = 'WARN'; sent.note = 'Diferansiyel sonuç belirsiz.'; }
       } else {

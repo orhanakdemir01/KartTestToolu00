@@ -115,7 +115,7 @@ export function KeysTab({
         ? <p className="err-text">✗ {arpcResult.error}</p>
         : <div className="genac" style={{ marginTop: 10 }}>
             {arpcResult.verdict && <p className={arpcResult.verdict === 'PASS' ? 'capk-ok' : arpcResult.verdict === 'FAIL' ? 'err-text' : 'oda-partial'} style={{ fontWeight: 600 }}>
-              {arpcResult.verdict === 'PASS' ? '✓ KART ISSUER AUTH KABUL ETTİ' : arpcResult.verdict === 'FAIL' ? '✗ KART REDDETTİ' : arpcResult.verdict === 'NA' ? '○ UYGULANAMAZ (kart issuer auth bildirmiyor)' : '◐ BELİRSİZ'} · {arpcResult.methodUsed?.toUpperCase()}</p>}
+              {arpcResult.verdict === 'PASS' ? '✓ KART ISSUER AUTH KABUL ETTİ' : arpcResult.verdict === 'FAIL' ? '✗ KART REDDETTİ' : arpcResult.verdict === 'NA' ? '○ UYGULANAMAZ (aşağıdaki nota bakın)' : '◐ BELİRSİZ'} · {arpcResult.methodUsed?.toUpperCase()}</p>}
             <div className="oda-info">
               <span className="oda-chip">{arpcResult.scheme}</span>
               {arpcResult.pan && <span className="mono small muted">{arpcResult.pan}</span>}

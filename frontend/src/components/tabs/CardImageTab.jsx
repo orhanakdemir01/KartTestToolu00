@@ -6,6 +6,7 @@
 import { useState } from 'react';
 import { looksTextual } from '../TlvTree.jsx';
 import { tlvTreeHtml, TLV_CSS } from '../../lib/report.js';
+import { EmvCardVisual, cardDataFromImage } from '../EmvCardVisual.jsx';
 
 // Parse an expected perso profile: JSON object {tag:value} or lines "TAG VALUE"
 // / "TAG=VALUE" / "TAG: VAL UE" (# comments ignored). Values are hex.
@@ -362,6 +363,18 @@ export function CardImageTab({ cardImage, imageBusy, cardPresent, extractImage, 
             <button className="btn-sm ghost" onClick={() => downloadImage('text')}>Metin</button>
           </div>}
           {!cardPresent && <span className="muted small">okuyucuda kart yok</span>}
+        </div>
+        <div className="emv-result" style={{ marginTop: 14 }}>
+          <EmvCardVisual cardData={cardDataFromImage(d)} scheme={d?.applications?.[0]?.scheme} />
+          <div className="emv-hint">
+            {d?.applications?.length > 0
+              ? <>
+                  <p className="muted small"><b>{d.appCount} uygulama · {d.totalTags} tag · {d.totalRecords} kayıt</b>{d.durationMs != null ? ` · ${d.durationMs}ms` : ''}</p>
+                  <p className="muted small">AID: <span className="mono">{d.applications[0].aid}</span></p>
+                  <p className="muted small">Kart görseli perso verisinden dolduruldu; tüm tag'ler aşağıda.</p>
+                </>
+              : <p className="muted small"><b>Kart Image Çıkart</b> ile kartı oku — kart görseli ve tüm perso tag'leri dolar.</p>}
+          </div>
         </div>
         {d?.error && <p className="err-text" style={{ marginTop: 12 }}>✗ {d.error}</p>}
         {d?.applications?.length === 0 && !d.error && <p className="muted small" style={{ marginTop: 12 }}>Kart üzerinde EMV uygulaması bulunamadı.</p>}

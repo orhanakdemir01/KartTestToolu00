@@ -65,7 +65,7 @@ export async function runEmvFlow(preferReader, body = {}) {
         const p2 = ((sfi << 3) | 4).toString(16).padStart(2, '0').toUpperCase();
         for (let rec = 1; rec <= 10; rec++) {
           const dir = await step(`READ DIRECTORY SFI${sfi} #${rec}`, `00B2${rec.toString(16).padStart(2, '0').toUpperCase()}${p2}00`);
-          if (!dir.ok) { dir.benign = true; break; } // 6A83 = end of directory (expected)
+          if (!dir.ok) { steps.pop(); break; } // 6A83 = dizin sonu (beklenen) — trace'i kirletme
           apps.push(...collectApps(dir.tlv.nodes, 'PSE'));
         }
       }

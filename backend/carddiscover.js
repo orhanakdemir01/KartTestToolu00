@@ -41,7 +41,7 @@ export async function discoverCardContext(preferReader, opts = {}) {
         const p2 = ((sfi << 3) | 4).toString(16).padStart(2, '0').toUpperCase();
         for (let rec = 1; rec <= 10; rec++) {
           const dir = await step(`READ DIRECTORY SFI${sfi} #${rec}`, `00B2${rec.toString(16).padStart(2, '0').toUpperCase()}${p2}00`);
-          if (!dir.ok) break;
+          if (!dir.ok) { steps.pop(); break; } // dizin sonu (6A83) — trace'i kirletme
           apps.push(...collectApps(dir.tlv.nodes, 'PSE'));
         }
       }

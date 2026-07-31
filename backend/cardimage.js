@@ -99,7 +99,7 @@ export async function extractCardImage(preferReader, opts = {}) {
       const p2 = ((sfi << 3) | 4).toString(16).padStart(2, '0').toUpperCase();
       for (let r = 1; r <= 10; r++) {
         const d = await step(`READ DIR SFI${sfi} #${r}`, `00B2${r.toString(16).padStart(2, '0').toUpperCase()}${p2}00`);
-        if (!d.ok) break;
+        if (!d.ok) { steps.pop(); break; } // dizin sonu (6A83) — trace'i kirletme
         found.push(...collectApps(d.tlv.nodes, 'PSE-DIR'));
       }
     }

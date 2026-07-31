@@ -1,16 +1,6 @@
 // Paylaşılan kart yüzü görseli — Kart & EMV ve Kart Image sekmelerinde kullanılır.
-// Kart okunmadan placeholder, okununca üzerine dolar. Şema-renkli + marka işareti.
-
-// Şema-özel kart yüzü rengi (gerçek marka tonlarına yakın).
-const SCHEME_BG = {
-  Visa: 'linear-gradient(135deg,#1a1f71 0%,#3d4db0 55%,#151a5e 100%)',
-  Mastercard: 'linear-gradient(135deg,#2b2d31 0%,#45484d 55%,#191a1c 100%)',
-  Amex: 'linear-gradient(135deg,#0a86b8 0%,#0a4d68 100%)',
-  Troy: 'linear-gradient(135deg,#0aa2a2 0%,#00595e 100%)',
-  UnionPay: 'linear-gradient(135deg,#e21836 0%,#5a1e6b 50%,#01538f 100%)',
-  Discover: 'linear-gradient(135deg,#e8721c 0%,#b64a00 100%)',
-  JCB: 'linear-gradient(135deg,#0b4ea2 0%,#8e1b3a 50%,#0a8f3c 100%)',
-};
+// Kart okunmadan placeholder, okununca üzerine dolar. Mavi kart + marka işareti
+// (şema logodan tanınır: Visa wordmark, Mastercard iki-daire).
 
 // Şema marka işareti — Visa/Mastercard tanınır biçimde, diğerleri metin.
 function SchemeMark({ scheme }) {
@@ -27,9 +17,8 @@ function SchemeMark({ scheme }) {
 // Kart yüzü görseli — cardData yoksa placeholder, varsa üzerine dolar.
 export function EmvCardVisual({ cardData, scheme, contactless }) {
   const has = !!cardData?.pan;
-  const bg = SCHEME_BG[scheme];
   return (
-    <div className={`emv-card ${has ? '' : 'empty'}`} style={bg ? { background: bg } : undefined}>
+    <div className={`emv-card ${has ? '' : 'empty'}`}>
       <div className="emv-top">
         {contactless && (
           <span className="emv-nfc" title="temassız">

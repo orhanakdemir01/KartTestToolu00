@@ -280,9 +280,10 @@ a:hover { color: #1a9850; text-decoration: underline; }
 .prof-table tr.mismatch td { background: rgba(192, 57, 43, .05); }
 .prof-table tr.missing td { background: rgba(217, 119, 6, .06); }
 
-.quick { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
-.quick-group { margin-bottom: 11px; }
-.quick-label { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #a3aab0; margin-bottom: 6px; font-weight: 600; }
+.quick { display: flex; flex-wrap: wrap; gap: 6px; }
+.quick-group { margin-bottom: 8px; padding: 9px 11px 10px; background: #fafbfc; border: 1px solid #edf0ee; border-radius: 10px; }
+.quick-label { display: flex; align-items: center; gap: 7px; font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: #6b7480; margin-bottom: 8px; font-weight: 700; }
+.quick-label::before { content: ''; width: 3px; height: 11px; border-radius: 2px; background: #1a9850; opacity: 0.7; }
 
 .builder { border-top: 1px solid #eef1ef; padding-top: 10px; margin-top: 10px; }
 .builder summary { cursor: pointer; font-size: 13px; color: #157a43; font-weight: 600; user-select: none; }

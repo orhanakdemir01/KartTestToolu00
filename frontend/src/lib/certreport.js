@@ -3,8 +3,15 @@
 // HTML rapora toplar: lab/operatör başlığı + DUT kimliği + genel verdikt.
 // FIME Savvy / UL / Collis tarzı master rapor. Saf fonksiyon, React state yok.
 import { tlvTreeHtml, TLV_CSS, traceText } from './report.js';
+import { APP_VERSION } from './version.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// SHA-256 (hex) — tarayıcı WebCrypto. Rapor kanıt bütünlüğü özeti için.
+async function sha256Hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
 const RANK = { fail: 0, warn: 1, pass: 2 };
 
 // ── Verdikt türetme ────────────────────────────────────────────────────────
@@ -186,14 +193,16 @@ function arpcSection(a) {
   ]);
 }
 
-export function buildCertReportHtml(ctx) {
+export async function buildCertReportHtml(ctx) {
   const {
     meta = {}, dut, card, emv, testResult, trace = [], readers = [], mode,
     compContact, compContactless, odaContact, odaContactless,
     pinResult, verifyResult, scenarioResult,
-    coverage, selfTest, arpcResult,
+    coverage, selfTest, arpcResult, engine,
   } = ctx;
-  const ts = new Date().toLocaleString('tr-TR');
+  const now = new Date();
+  const ts = now.toLocaleString('tr-TR');
+  const iso = now.toISOString();
 
   const compC = complianceVerdict(compContact), compCL = complianceVerdict(compContactless);
   const odaC = odaVerdict(odaContact), odaCL = odaVerdict(odaContactless);
@@ -284,12 +293,48 @@ export function buildCertReportHtml(ctx) {
     </tr></table>
     <p class="muted">Bu rapor KartTest tarafından üretilmiştir; genel verdikt tüm denetlenen bölümlerin en kötüsüdür ve her kural yukarıdaki spec kaynaklarına izlenebilir.</p></section>`;
 
+  // ── Belge bütünlüğü — makine-okunur kanıt paketi + SHA-256 özeti ───────────
+  // Kanonik JSON (sabit anahtar sırası) → SHA-256. Paket belgeye gömülür; bir
+  // verdikt HTML'de elle değiştirilirse pakette karşılığı olmaz → özet tutmaz.
+  const evidence = {
+    tool: 'KartTest',
+    toolVersion: APP_VERSION,
+    ruleEngine: engine ? { rules: engine.count, categories: engine.categories } : null,
+    generatedUtc: iso,
+    overall: ov.text,
+    dut: dut ? { scheme: dut.scheme || null, pan: dut.pan || null, aid: dut.aid || null, expiry: dut.expiry || null } : null,
+    sections: {
+      complianceContact: compC?.text || null,
+      complianceContactless: compCL?.text || null,
+      odaContact: odaC?.text || null,
+      odaContactless: odaCL?.text || null,
+      crypto: cryptoV?.text || null,
+      arpc: (arpcResult && !arpcResult.error && arpcResult.verdict) || null,
+      selfTest: selfTest ? `${selfTest.passed}/${selfTest.total} · ${selfTest.independent.passed}/${selfTest.independent.total} bağımsız` : null,
+    },
+    operator: meta.operator || null,
+    lab: meta.lab || null,
+    ref: meta.ref || null,
+  };
+  const evidenceJson = JSON.stringify(evidence);
+  const digest = await sha256Hex(evidenceJson);
+  body += `<section class="integ">${H('Belge Bütünlüğü — Kanıt Özeti')}${kv([
+    ['Araç sürümü', `KartTest v${APP_VERSION}`],
+    ['Kural motoru', engine ? `${engine.count} kural · ${engine.categories} kategori` : '—'],
+    ['Üretim (yerel)', ts],
+    ['Üretim (UTC / ISO-8601)', iso],
+    ['Kanıt özeti · SHA-256', digest],
+  ])}
+    <p class="muted">Yukarıdaki <b>kanıt özeti</b>, aşağıda gömülü makine-okunur kanıt paketinin SHA-256 karmasıdır. Herhangi bir SHA-256 aracıyla yeniden hesaplanarak belgenin değiştirilmediği doğrulanabilir — HTML'deki bir verdikt elle düzenlenirse gömülü paketle tutarsız olur ve özet tutmaz.</p>
+    <details><summary class="muted">Kanıt paketi (JSON) — bağımsız doğrulama için</summary><pre class="ebundle">${esc(evidenceJson)}</pre></details></section>`;
+
   // Trace eki
   if (trace.length) body += `<section>${H('Ek · İşlem Trace')}${traceSection(trace)}</section>`;
 
   if (!body) body = '<p>Rapora dahil edilecek veri yok. Önce kampanya çalıştırın veya kart okuyun.</p>';
 
   const metaLine = [
+    `KartTest v${esc(APP_VERSION)}`,
     meta.lab && `Lab: ${esc(meta.lab)}`, meta.operator && `Operatör: ${esc(meta.operator)}`,
     meta.ref && `Referans: ${esc(meta.ref)}`, `Tarih: ${esc(ts)}`,
     `Okuyucu: ${esc(readers[0] || '—')}`, `Mod: ${esc(mode || '—')}`,
@@ -321,6 +366,9 @@ export function buildCertReportHtml(ctx) {
     .pass{color:#15803d;}.fail{color:#b91c1c;}.muted{color:#888;font-size:12px;}
     tr.rp td:first-child{color:#15803d;font-weight:bold;}tr.rf td:first-child{color:#b91c1c;font-weight:bold;}tr.rf{background:#fef2f2;}
     .sign-t td{border:1px solid #ccc;padding:16px;width:50%;font-size:12.5px;vertical-align:top;}
+    .integ td.v{font-size:11.5px;}
+    pre.ebundle{background:#f6f8fa;border:1px solid #e2e6ea;border-radius:8px;padding:10px 12px;font-family:'Consolas',monospace;font-size:11px;white-space:pre-wrap;word-break:break-all;color:#333;margin:6px 0 0;}
+    details summary{cursor:pointer;font-size:12px;}
     ${TLV_CSS}
     @media print{body{padding:0;}.te,section,tr{break-inside:avoid;}}
   </style></head><body>

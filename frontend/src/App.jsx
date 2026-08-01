@@ -1041,21 +1041,23 @@ ${apps}
     card, emv, testResult, trace, readers, mode,
     compContact, compContactless, odaContact, odaContactless,
     pinResult, verifyResult, scenarioResult,
-    coverage: manifest?.coverage, selfTest, arpcResult,
+    coverage: manifest?.coverage, selfTest, arpcResult, engine: manifest?.rules,
   });
 
-  const downloadReport = () => {
-    const url = URL.createObjectURL(new Blob([buildCertReportHtml(reportCtx())], { type: 'text/html' }));
+  const downloadReport = async () => {
+    const html = await buildCertReportHtml(reportCtx());
+    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
     const a = document.createElement('a');
     a.href = url; a.download = `karttest-sertifika-${Date.now()}.html`; a.click();
     URL.revokeObjectURL(url);
     addTrace({ kind: 'event', msg: 'Sertifikasyon raporu indirildi (HTML)' });
   };
 
-  const printReport = () => {
+  const printReport = async () => {
     const w = window.open('', '_blank');
     if (!w) { addTrace({ kind: 'error', msg: 'Pop-up engellendi — yazdırma açılamadı' }); return; }
-    w.document.write(buildCertReportHtml(reportCtx()));
+    const html = await buildCertReportHtml(reportCtx());
+    w.document.write(html);
     w.document.close();
     w.focus();
     setTimeout(() => w.print(), 300);

@@ -46,6 +46,12 @@ a:hover { color: #1a9850; text-decoration: underline; }
 .sidebar-foot .f-ico { font-size: 16px; color: #959ca3; }
 .sidebar-foot .f-main { font-size: 12px; font-weight: 600; color: #3d4650; }
 .sidebar-foot .f-sub { font-size: 10.5px; color: #a3aab0; }
+.reader-recover { margin-top: 7px; display: flex; flex-direction: column; gap: 5px; }
+.reader-recover .rr-msg { font-size: 10.5px; color: #c0392b; }
+.reader-recover .rr-msg.busy { color: #b45309; }
+.reader-recover .rr-btn { font-size: 11px; font-weight: 600; padding: 5px 9px; border-radius: 7px; border: 1px solid #f0cdc8; background: #fdecea; color: #b0332a; cursor: pointer; transition: background .15s; }
+.reader-recover .rr-btn:hover:not(:disabled) { background: #fbdcd7; }
+.reader-recover .rr-btn:disabled { opacity: .65; cursor: default; color: #b45309; border-color: #f2ddb0; background: #fdf4e3; }
 
 .main-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 28px 12px; flex-wrap: wrap; }

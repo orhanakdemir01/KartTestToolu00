@@ -10,7 +10,15 @@ class PcscManager {
     this.available = false;       // true once the pcsclite layer is up
     this.lastError = null;
     this.readers = new Map();     // name -> { reader, present, atr, protocol, connected }
+    // ── Oto-kurtarma durumu ──
+    this._hadReaders = false;     // hiç okuyucu görüldü mü (boş makineyi kurtarmaya kalkma)
+    this._zeroSince = null;       // okuyucu sayısı ne zamandır 0 (sessiz düşme tespiti)
+    this._silentTries = 0;        // ardışık başarısız sessiz-kurtarma → backoff
+    this.recovering = false;      // şu an context yeniden mi kuruluyor
+    this.recoveryCount = 0;       // toplam kurtarma sayısı (izleme)
+    this.lastRecoveryAt = null;
     this._init();
+    this._startWatchdog();        // sessiz "0 okuyucu" düşmesini yakala (SDI011 combo)
   }
 
   _init() {
@@ -33,6 +41,11 @@ class PcscManager {
 
     this.pcsc.on('reader', (reader) => {
       console.log(`[pcsc] okuyucu algılandı: ${reader.name}`);
+      // Okuyucu (yeniden) göründü → kurtarma durumunu temizle.
+      this._hadReaders = true;
+      this._zeroSince = null;
+      this._silentTries = 0;
+      this.recovering = false;
       const entry = { reader, present: false, atr: null, protocol: null, connected: false };
       this.readers.set(reader.name, entry);
 
@@ -90,15 +103,77 @@ class PcscManager {
 
   _reconnect() {
     console.log('[pcsc] PC/SC context yeniden kuruluyor…');
+    const old = this.pcsc;
+    this.pcsc = null;
+    this.readers.clear();
     try {
-      if (this.pcsc) {
-        if (typeof this.pcsc.removeAllListeners === 'function') this.pcsc.removeAllListeners();
-        if (typeof this.pcsc.close === 'function') this.pcsc.close();
+      if (old) {
+        if (typeof old.removeAllListeners === 'function') old.removeAllListeners();
+        // close() bir SCardCancel tetikler → context 'error' (0x80100002
+        // SCARD_E_CANCELLED) yayar. Dinleyicisiz 'error' Node'u çökertir; bu
+        // yüzden kapatmadan hemen önce yutucu bir handler ekle.
+        if (typeof old.on === 'function') old.on('error', () => {});
+        if (typeof old.close === 'function') old.close();
       }
     } catch { /* ignore close errors */ }
-    this.readers.clear();
-    this.pcsc = null;
     this._init(); // new context picks up current readers; if still down, error reschedules
+  }
+
+  // Sağlık watchdog'u — bazı okuyucular (ör. SDI011 combo) PC/SC katmanından
+  // SESSİZCE düşer: 'error' eventi ateşlenmez, okuyucu sayısı 0'a iner ve context
+  // kendini toparlamaz (backend restart gerekirdi). Bu döngü o durumu yakalar:
+  // daha önce okuyucu görülmüşken sayı bir süredir 0 ise context'i proaktif kurar.
+  _startWatchdog(intervalMs = 5000, baseGraceMs = 6000) {
+    if (this._watchdog) return;
+    this._watchdog = setInterval(() => this._healthTick(baseGraceMs), intervalMs);
+    if (this._watchdog.unref) this._watchdog.unref(); // süreç kapanışını engelleme
+  }
+
+  _healthTick(baseGraceMs) {
+    if (!this.available || this._reconnectTimer) return; // servis düştüyse init/error kurtarıyor
+    const count = this.readers.size;
+    if (count > 0) { this._zeroSince = null; this._silentTries = 0; this.recovering = false; return; }
+    if (!this._hadReaders) return;              // hiç okuyucu görülmedi (boş makine) → dokunma
+    const now = Date.now();
+    if (!this._zeroSince) { this._zeroSince = now; return; } // bir tur bekle — geçici olabilir
+    // Ardışık başarısız kurtarmada geri çekil (6s→12s→24s… max 60s) ki okuyucu
+    // gerçekten çıkarıldıysa log'u ve context'i sürekli kurcalamayalım.
+    const grace = Math.min(baseGraceMs * 2 ** this._silentTries, 60000);
+    if (now - this._zeroSince < grace) return;
+    console.log(`[pcsc] okuyucu 0'a düştü (sessiz) — context proaktif yeniden kuruluyor (deneme ${this._silentTries + 1})`);
+    this._zeroSince = null;
+    this._silentTries++;
+    this.recovering = true;
+    this.recoveryCount++;
+    this.lastRecoveryAt = now;
+    this._reconnect();
+  }
+
+  // Operatör tetiklemeli anında kurtarma (backend restart yerine "Okuyucu Kurtar"
+  // butonu). Bekleyen gecikmeleri atlar, context'i hemen yeniden kurar.
+  forceRecover() {
+    if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
+    this._zeroSince = null;
+    this._silentTries = 0; // operatör bilerek istedi → hemen dene, backoff'u sıfırla
+    this.recovering = true;
+    this.recoveryCount++;
+    this.lastRecoveryAt = Date.now();
+    console.log('[pcsc] elle kurtarma tetiklendi — context yeniden kuruluyor');
+    this._reconnect();
+    return this.getHealth();
+  }
+
+  // PC/SC sağlık özeti — frontend'in kurtarma göstergesi + "Kurtar" butonu için.
+  getHealth() {
+    return {
+      available: this.available,
+      readerCount: this.readers.size,
+      hadReaders: this._hadReaders,
+      recovering: this.recovering,
+      recoveryCount: this.recoveryCount,
+      lastRecoveryAt: this.lastRecoveryAt,
+      lastError: this.lastError,
+    };
   }
 
   /** List reader names currently known to the PC/SC layer. */

@@ -32,7 +32,7 @@ app.use(express.json({ limit: '25mb' }));
 
 // ── Card / reader ───────────────────────────────────────────────────
 
-// GET /api/readers — list connected readers + per-reader card status
+// GET /api/readers — list connected readers + per-reader card status + health
 app.get('/api/readers', (req, res) => {
   const readers = pcsc.available ? pcsc.listReaders() : [];
   res.json({
@@ -41,7 +41,15 @@ app.get('/api/readers', (req, res) => {
     status: pcsc.available ? pcsc.getReaderStatus() : [],
     mode: 'real',
     pcscAvailable: pcsc.available,
+    health: pcsc.getHealth(),
   });
+});
+
+// POST /api/reader/recover — operatör tetiklemeli okuyucu kurtarma (backend
+// restart yerine): PC/SC context'ini hemen yeniden kurar. Okuyucu sessizce
+// düştüğünde (SDI011 combo) kullanılır.
+app.post('/api/reader/recover', (req, res) => {
+  res.json({ ok: true, health: pcsc.forceRecover() });
 });
 
 // GET /api/card — get card info + decoded ATR from the (optionally selected) reader

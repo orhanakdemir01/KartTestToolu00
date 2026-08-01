@@ -101,6 +101,8 @@ function App() {
   const [mode, setMode] = useState(null);
   const [readers, setReaders] = useState([]);
   const [readerStatus, setReaderStatus] = useState([]);
+  const [readerHealth, setReaderHealth] = useState(null);
+  const [recovering, setRecovering] = useState(false);
   const [selectedReader, setSelectedReader] = useState(null); // null = otomatik
   const [card, setCard] = useState(null);
   const [cardPresent, setCardPresent] = useState(false);
@@ -290,11 +292,27 @@ function App() {
       const d = await r.json();
       setReaders(d.readers);
       setReaderStatus(d.status || []);
+      setReaderHealth(d.health || null);
       setMode(d.mode);
       setConn('ok');
     } catch {
       setConn('error');
     }
+  };
+
+  // Okuyucu oto-kurtarma: PC/SC context'ini yeniden kurdurur (backend restart
+  // yerine). Okuyucu sessizce 0'a düştüğünde ("Okuyucu yok") operatör tetikler.
+  const recoverReader = async () => {
+    if (recovering) return;
+    setRecovering(true);
+    addTrace({ kind: 'event', msg: 'Okuyucu kurtarma tetiklendi — PC/SC context yeniden kuruluyor…' });
+    try {
+      await fetch(`${API}/reader/recover`, { method: 'POST' });
+    } catch {
+      addTrace({ kind: 'error', msg: 'Kurtarma isteği gönderilemedi (backend?)' });
+    }
+    // Kısa gecikme sonra durumu tazele — okuyucu birkaç saniyede geri gelir.
+    setTimeout(async () => { await pollReaders(); setRecovering(false); }, 2500);
   };
 
   const pollCard = async (manual = false) => {
@@ -1117,9 +1135,19 @@ ${apps}
         </nav>
         <div className="sidebar-foot">
           <span className="f-ico">🖥</span>
-          <div>
+          <div style={{ flex: 1 }}>
             <div className="f-main">{readers.length ? `PC/SC · ${readers.length} okuyucu` : 'Okuyucu yok'}</div>
             <div className="f-sub">{mode ? 'Gerçek mod' : '—'} · {conn === 'ok' ? 'Bağlı' : 'Bağlantı hatası'}</div>
+            {mode && readers.length === 0 && (
+              <div className="reader-recover">
+                <span className={`rr-msg${(recovering || readerHealth?.recovering) ? ' busy' : ''}`}>
+                  {(recovering || readerHealth?.recovering) ? '↻ Okuyucu kurtarılıyor…' : 'Okuyucu görünmüyor'}
+                </span>
+                <button className="rr-btn" disabled={recovering || readerHealth?.recovering} onClick={recoverReader}>
+                  {(recovering || readerHealth?.recovering) ? 'Kurtarılıyor…' : '↻ Okuyucu Kurtar'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </aside>

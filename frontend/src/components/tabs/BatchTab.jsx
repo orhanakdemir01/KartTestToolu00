@@ -15,7 +15,7 @@ export function BatchTab({ batch, batchBusy, processBatchCard, removeBatchRow, c
     <>
       <section className="panel">
         <div className="panel-head">
-          <h2>Parti · Çoklu-Kart QA</h2>
+          <h2>Çoklu-Kart QA</h2>
           <span className="muted small">sırayla işle · birleşik rapor</span>
         </div>
         <p className="muted small">Perso QA partisi: her kartı okuyucuya koy, ilgili <b>İşle</b>'ye bas — uyumluluk denetimi koşulur ve sonuç (verdikt + regresyon) partiye eklenir. Kartı çıkar, sıradakini tak, tekrarla. Sonunda tek <b>birleşik rapor</b> al.</p>

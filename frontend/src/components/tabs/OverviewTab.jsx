@@ -49,7 +49,7 @@ export function OverviewTab({ manifest, cardPresent, emv, selectTab, api }) {
   const nav = [
     ['card', '💳 Kart & EMV', 'Kart oku · kriptogram · ODA'],
     ['compliance', '✔ Uyumluluk', 'Perso denetim · spec-izlenebilir'],
-    ['batch', '🗃 Parti', 'Çoklu-kart QA'],
+    ['batch', '🗃 Çoklu-Kart QA', 'Sırayla işle · birleşik rapor'],
     ['history', '📈 Geçmiş', 'Regresyon trendi'],
     ['report', '📊 Rapor', 'Audit-grade sertifika'],
   ];

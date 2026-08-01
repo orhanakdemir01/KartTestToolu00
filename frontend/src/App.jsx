@@ -93,7 +93,7 @@ const TAB_GROUPS = [
     { id: 'report', label: 'Rapor', icon: '📊', desc: 'Oturum raporu (HTML / yazdır)' },
     { id: 'session', label: 'Oturum', icon: '💾', desc: 'Test oturumunu kaydet / yükle / devam et' },
     { id: 'history', label: 'Geçmiş', icon: '📈', desc: 'Kart bazlı denetim geçmişi + regresyon trendi' },
-    { id: 'batch', label: 'Parti', icon: '🗃', desc: 'Çoklu-kart perso QA — sırayla işle, birleşik rapor' },
+    { id: 'batch', label: 'Çoklu-Kart QA', icon: '🗃', desc: 'Çoklu-kart perso QA — sırayla işle, birleşik rapor' },
   ] },
 ];
 

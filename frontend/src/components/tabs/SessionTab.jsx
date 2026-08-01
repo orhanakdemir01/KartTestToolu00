@@ -77,8 +77,8 @@ export function SessionTab({ sessions, sessionBusy, saveSessionAs, loadSessionFi
           </div>
         ) : <p className="muted small">Henüz kaydedilecek sonuç yok — önce bir okuma/denetim çalıştırın.</p>}
 
-        <div className="capk-add-row">
-          <label style={{ flex: 1 }}>Oturum adı
+        <div className="sess-row">
+          <label>Oturum adı
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="ör. Mastercard-0019-2026-07-21" />
           </label>
           <button className="btn" disabled={sessionBusy === 'save' || !name.trim() || !present.length}
@@ -121,14 +121,15 @@ export function SessionTab({ sessions, sessionBusy, saveSessionAs, loadSessionFi
           <span className="muted small">kimlik · verdikt · perso tag farkları</span>
         </div>
         <p className="muted small">İki oturum seç, farkları gör. <b>Mevcut</b> = şu an bellekteki (kaydedilmemiş) oturum.</p>
-        <div className="capk-add-row" style={{ alignItems: 'flex-end' }}>
-          <label style={{ flex: 1 }}>A
+        <div className="sess-row sess-compare">
+          <label>A · Temel
             <select value={selA} onChange={(e) => setSelA(e.target.value)}>
               <option value={CURRENT}>Mevcut oturum</option>
               {sessions.map((s) => <option key={s.file} value={s.file}>{s.name}</option>)}
             </select>
           </label>
-          <label style={{ flex: 1 }}>B
+          <span className="sess-vs" aria-hidden="true">⇄</span>
+          <label>B · Karşılaştırılan
             <select value={selB} onChange={(e) => setSelB(e.target.value)}>
               <option value="">— seç —</option>
               <option value={CURRENT}>Mevcut oturum</option>

@@ -468,6 +468,14 @@ a:hover { color: #1a9850; text-decoration: underline; }
 .capk-add select { padding: 8px 10px; background: #f5f8f6; border: 1px solid #d9e0db; border-radius: 8px; color: #1f2733; font-size: 13px; font-family: inherit; }
 .capk-add input:focus, .capk-add textarea:focus, .capk-add select:focus { outline: none; border-color: #1a9850; }
 
+/* Oturum — kaydet + karşılaştır satırları (etiket üstte, alan tam genişlik, buton hizalı) */
+.sess-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-top: 12px; }
+.sess-row > label { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 170px; font-size: 10.5px; letter-spacing: .4px; text-transform: uppercase; color: #6b7480; font-weight: 700; }
+.sess-row input, .sess-row select { width: 100%; padding: 9px 11px; background: #f5f8f6; border: 1px solid #d9e0db; border-radius: 9px; color: #1f2733; font-size: 13px; font-family: inherit; box-sizing: border-box; }
+.sess-row input:focus, .sess-row select:focus { outline: none; border-color: #1a9850; box-shadow: 0 0 0 3px rgba(26,152,80,.12); }
+.sess-row > .btn { flex: 0 0 auto; white-space: nowrap; }
+.sess-compare .sess-vs { flex: 0 0 auto; align-self: center; margin-bottom: 8px; color: #b0b6bc; font-size: 15px; user-select: none; }
+
 /* GENERATE AC / ARQC */
 .genac { margin-top: 18px; padding-top: 18px; border-top: 1px solid #eef1ef; }
 .genac h3 { font-size: 12px; color: #157a43; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; font-weight: 700; }

@@ -10,6 +10,7 @@ import { terminalDefaults, CANDIDATE_AIDS } from './terminal.js';
 import { findKey } from './capk.js';
 import { listKeys, findForPan, findExact } from './sessionkeys.js';
 import { verifyArqcAuto } from './crypto3des.js';
+import { verifyEcosArqcAes, parseEcosIad } from './cryptoaes.js';
 import { recoverIssuerPK, recoverIccPK, verifySDAD } from './oda.js';
 
 // Reusable EMV read flow — returns the result object (used by the /api/emv/read
@@ -247,6 +248,25 @@ export async function runEmvFlow(preferReader, body = {}) {
         defs['9A'] + defs['9C'] + defs['9F37'];
       let firstResult = null;
       for (const k of keyList) {
+        // ── ECOS AES anahtarı → EMV CSK-AES doğrulama (3DES yolu DEĞİŞMEDEN korunur) ──
+        if ((k.keyType || '3des') !== '3des') {
+          try {
+            const iadP = parseEcosIad(g.iad || '');
+            const cvr = iadP?.cvr || '';
+            const ext = (iadP?.cvnDecoded?.extendedInput && iadP?.iadExt) ? iadP.iadExt : '';
+            const terminal = { amountAuth: defs['9F02'], amountOther: defs['9F03'], termCountry: defs['9F1A'],
+              tvr: defs['95'], txnCurrency: defs['5F2A'], txnDate: defs['9A'], txnType: defs['9C'], un: defs['9F37'] };
+            const r = verifyEcosArqcAes({ key: k, atc: g.atc, pan: cardData.pan, psn: cardData.panSequence || k.psn,
+              aip: aip || '', cvr, iadExt: ext, terminal, cardArqc: g.arqc });
+            const v = { match: r.match, computed: r.computed, cardArqc: g.arqc, sessionKey: r.skac,
+              inputData: r.acInput, keyLabel: k.label, keyLevel: k.keyLevel, keyPanMatch: isPanKey(k),
+              scheme: 'ECOS AES', cvn: iadP?.cvnDecoded || null, usedMaskedCvr: !!r.usedMaskedCvr };
+            if (r.match) { g.verify = v; return; }
+            if (!firstResult) firstResult = v;
+          } catch (e) { if (!firstResult) firstResult = { error: e.message, keyLabel: k.label, scheme: 'ECOS AES' }; }
+          continue; // AES anahtar için 3DES yolunu atla
+        }
+        // ── mevcut 3DES yolu (M/Chip Advance vb.) — hiç değişmedi ──
         try {
           const r = verifyArqcAuto({ acKey: k.acKey, keyLevel: k.keyLevel,
             pan: cardData.pan, psn: cardData.panSequence || k.psn, atc: g.atc, un: defs['9F37'],

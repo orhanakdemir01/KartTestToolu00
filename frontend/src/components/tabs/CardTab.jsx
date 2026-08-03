@@ -124,6 +124,7 @@ export function CardTab({
               <div className="arqc-verify">
                 <p className={emv.genac.verify.match ? 'capk-ok' : 'err-text'}>
                   {emv.genac.verify.match ? '✓ ARQC DOĞRULANDI' : '✗ ARQC UYUŞMUYOR'} — {emv.genac.verify.keyLabel} ({emv.genac.verify.keyLevel})
+                  {emv.genac.verify.scheme === 'ECOS AES' && <span className="kcv-tag aes" style={{ marginLeft: 6 }}>ECOS AES{emv.genac.verify.cvn ? ` · CVN ${emv.genac.verify.cvn.raw}` : ''}{emv.genac.verify.usedMaskedCvr ? ' · maskeli CVR' : ''}</span>}
                 </p>
                 <table className="kv-table">
                   <tbody>

@@ -129,6 +129,31 @@ export function ecosArpcAes(skacHex, arqcHex, arpcRcHex) {
   return aesCmac(skacHex, M).slice(0, 16);
 }
 
+// ECOS AES ARQC doğrulama (yeniden kullanılabilir) — EMV akışı + endpoint'ler için.
+// key: { acKey, keyLevel, keyType }. terminal: AC input terminal alanları.
+// CVR'da CDA bitleri (byte2 b8/b7) varsa maskeli varyant da denenir (CDA senaryosu).
+// Döner: { match, computed, acInput, skac, mkac, usedMaskedCvr?, cvrMasked?, computedMaskedCvr? }.
+export function verifyEcosArqcAes({ key, atc, pan, psn, aip, cvr, iadExt, terminal, cardArqc }) {
+  let mkac = null, skac = null;
+  if (key.keyLevel === 'session') skac = clean(key.acKey);
+  else if (key.keyLevel === 'icc') { mkac = clean(key.acKey); skac = deriveAcSessionKeyAes(mkac, atc); }
+  else { mkac = deriveIccMasterKeyAes(key.acKey, pan, psn); skac = deriveAcSessionKeyAes(mkac, atc); }
+  const card = clean(cardArqc);
+  const build = (cv) => buildEcosAcInput({ ...terminal, aip, atc, cvr: cv, iadExt });
+  const acInput = build(cvr);
+  const computed = ecosArqcAes(skac, acInput);
+  if (computed === card) return { match: true, computed, acInput, skac, mkac, usedMaskedCvr: false };
+  // Maskeli CVR (CDA: byte2 b8/b7 raporlanır ama kriptograma girmemiş olabilir)
+  const b2 = cvr && clean(cvr).length >= 4 ? parseInt(clean(cvr).slice(2, 4), 16) : 0;
+  if (b2 & 0xC0) {
+    const cvrM = clean(cvr).slice(0, 2) + (b2 & 0x3F).toString(16).padStart(2, '0').toUpperCase() + clean(cvr).slice(4);
+    const computedM = ecosArqcAes(skac, build(cvrM));
+    if (computedM === card) return { match: true, computed: computedM, acInput: build(cvrM), skac, mkac, usedMaskedCvr: true, cvrMasked: cvrM };
+    return { match: false, computed, computedMaskedCvr: computedM, cvrMasked: cvrM, acInput, skac, mkac };
+  }
+  return { match: false, computed, acInput, skac, mkac };
+}
+
 // Script secure-messaging MAC (AES) = AES-CMAC(SKSMI)[CLA‖INS‖P1‖P2‖Lc‖ATC‖Rand‖CmdData].
 export function ecosSmMacAes(sksmiHex, p) {
   const M = clean(p.cla) + clean(p.ins) + clean(p.p1) + clean(p.p2) + clean(p.lc)

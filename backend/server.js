@@ -241,7 +241,8 @@ app.post('/api/ecos/verify-arqc', async (req, res) => {
     return res.status(404).json({ error: 'Okuyucuda kart yok' });
   }
   try {
-    const ctx = await discoverCardContext(preferReader, {});
+    // cda:true → GENERATE AC P1=90 (Combined DDA/AC) — CDA senaryosu teşhisi.
+    const ctx = await discoverCardContext(preferReader, req.body?.cda ? { genP1: '90' } : {});
     if (ctx.error) return res.json({ error: ctx.error });
     if (!ctx.arqc || !ctx.atc) return res.json({ error: 'Karttan ARQC/ATC alınamadı (GENERATE AC başarısız)' });
     const td = terminalDefaults();
@@ -253,13 +254,18 @@ app.post('/api/ecos/verify-arqc', async (req, res) => {
       amountAuth: td['9F02'], amountOther: td['9F03'], termCountry: td['9F1A'],
       tvr: td['95'], txnCurrency: td['5F2A'], txnDate: td['9A'], txnType: td['9C'], un: td['9F37'],
     };
-    const acInput = buildEcosAcInput({ ...terminal, aip: ctx.aip, atc: ctx.atc, cvr, iadExt: ext });
+    const mkInput = (cv) => buildEcosAcInput({ ...terminal, aip: ctx.aip, atc: ctx.atc, cvr: cv, iadExt: ext });
+    const acInput = mkInput(cvr);
+    // CDA'da CVR byte2'nin "Combined DDA/AC returned" bitleri (b8/b7) raporlanır ama
+    // kriptograma girmemiş olabilir → maskeli CVR (byte2 & 0x3F) varyantı da hesapla.
+    const cvrByte2 = cvr.length >= 4 ? parseInt(cvr.slice(2, 4), 16) : 0;
+    const cvrMasked = (cvrByte2 & 0xC0) ? cvr.slice(0, 2) + (cvrByte2 & 0x3F).toString(16).padStart(2, '0').toUpperCase() + cvr.slice(4) : null;
     const out = {
       pan: ctx.pan, aid: ctx.aid, atc: ctx.atc, aip: ctx.aip, cardArqc: ctx.arqc,
-      iad: ctx.iad, cvn, cvr, extendedInput: !!ext, terminal, acInput,
+      iad: ctx.iad, cvn, cvr, extendedInput: !!ext, terminal, acInput, genP1: req.body?.cda ? '90' : '80',
     };
     // Anahtar seçiliyse doğrula (icc=MKac · session=SKac · master=IMK→MKac→SKac)
-    const { keyLabel, keyPan, arc, csu } = req.body || {};
+    const { keyLabel, keyPan, arc } = req.body || {};
     if (keyLabel) {
       const k = findExact(keyLabel, keyPan || '');
       if (!k) out.keyError = 'Seçilen anahtar bulunamadı';
@@ -270,17 +276,68 @@ app.post('/api/ecos/verify-arqc', async (req, res) => {
           if (k.keyLevel === 'session') skac = k.acKey;
           else if (k.keyLevel === 'icc') { mkac = k.acKey; skac = deriveAcSessionKeyAes(mkac, ctx.atc); }
           else { mkac = deriveIccMasterKeyAes(k.acKey, ctx.pan, ctx.psn); skac = deriveAcSessionKeyAes(mkac, ctx.atc); }
+          const card = (ctx.arqc || '').toUpperCase();
           const computed = ecosArqcAes(skac, acInput);
           out.keyLabel = k.label; out.keyLevel = k.keyLevel; out.mkac = mkac; out.skac = skac;
           out.computedArqc = computed;
-          out.match = computed.toUpperCase() === (ctx.arqc || '').toUpperCase();
-          out.verdict = out.match ? 'PASS' : 'FAIL';
-          if (out.match && arc) {
-            out.arpc = ecosArpcAes(skac, ctx.arqc, arc.replace(/\s/g, '')); // ARPC-RC = ARC (2 bayt)
+          out.match = computed.toUpperCase() === card;
+          // Maskeli CVR varyantını da dene (CDA teşhisi)
+          if (cvrMasked) {
+            out.cvrMasked = cvrMasked;
+            out.computedArqcMaskedCvr = ecosArqcAes(skac, mkInput(cvrMasked));
+            out.matchMaskedCvr = out.computedArqcMaskedCvr.toUpperCase() === card;
+          }
+          out.verdict = (out.match || out.matchMaskedCvr) ? 'PASS' : 'FAIL';
+          const okSkac = out.match ? skac : (out.matchMaskedCvr ? skac : null);
+          if ((out.match || out.matchMaskedCvr) && arc) {
+            out.arpc = ecosArpcAes(okSkac, ctx.arqc, arc.replace(/\s/g, '')); // ARPC-RC = ARC (2 bayt)
           }
         } catch (e) { out.keyError = e.message; }
       }
     }
+    res.json(out);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/ecos/compute-arqc — ELLE ECOS ARQC hesapla (kart YOK). Terminalden
+// yakalanan işlemi doğrulamak için: ya hazır acInput ver, ya da alanları ver
+// (bunları Ecos Tablo 20/21 sırasına göre birleştiririz). ATC + AES anahtar zorunlu.
+app.post('/api/ecos/compute-arqc', (req, res) => {
+  try {
+    const b = req.body || {};
+    const clean = (s) => (s || '').replace(/\s/g, '').toUpperCase();
+    const atc = clean(b.atc);
+    if (!atc) return res.json({ error: 'ATC gerekli (SKac türetmesi için)' });
+    // AC input: doğrudan verildiyse onu kullan, yoksa alanlardan kur.
+    const fields = (cv) => ({
+      amountAuth: b.amountAuth, amountOther: b.amountOther, termCountry: b.termCountry,
+      tvr: b.tvr, txnCurrency: b.txnCurrency, txnDate: b.txnDate, txnType: b.txnType,
+      un: b.un, aip: b.aip, atc, cvr: cv, iadExt: b.iadExt,
+    });
+    const pasted = !!clean(b.acInput);
+    let acInput = pasted ? clean(b.acInput) : buildEcosAcInput(fields(b.cvr));
+    // Alan modunda CVR'da CDA bitleri (byte2 b8/b7) varsa maskeli varyantı da dene.
+    const cvr = clean(b.cvr);
+    const cvrByte2 = cvr.length >= 4 ? parseInt(cvr.slice(2, 4), 16) : 0;
+    const cvrMasked = (!pasted && (cvrByte2 & 0xC0)) ? cvr.slice(0, 2) + (cvrByte2 & 0x3F).toString(16).padStart(2, '0').toUpperCase() + cvr.slice(4) : null;
+    const out = { acInput, acInputLen: acInput.length / 2, atc };
+    const k = findExact(b.keyLabel, b.keyPan || '');
+    if (!k) return res.json({ ...out, error: 'Seçilen anahtar bulunamadı' });
+    if ((k.keyType || '3des') === '3des') return res.json({ ...out, error: 'Seçilen anahtar 3DES — ECOS için AES gerekli' });
+    let mkac = null, skac = null;
+    if (k.keyLevel === 'session') skac = k.acKey;
+    else if (k.keyLevel === 'icc') { mkac = k.acKey; skac = deriveAcSessionKeyAes(mkac, atc); }
+    else { if (!b.pan) return res.json({ ...out, error: 'master seviye için PAN gerekli (MKac türetmesi)' }); mkac = deriveIccMasterKeyAes(k.acKey, b.pan, b.psn || '00'); skac = deriveAcSessionKeyAes(mkac, atc); }
+    out.keyLabel = k.label; out.keyLevel = k.keyLevel; out.mkac = mkac; out.skac = skac;
+    out.computedArqc = ecosArqcAes(skac, acInput);
+    if (cvrMasked) { out.cvrMasked = cvrMasked; out.computedArqcMaskedCvr = ecosArqcAes(skac, buildEcosAcInput(fields(cvrMasked))); }
+    if (b.cardArqc) {
+      out.cardArqc = clean(b.cardArqc);
+      out.match = out.computedArqc === out.cardArqc;
+      if (out.computedArqcMaskedCvr) out.matchMaskedCvr = out.computedArqcMaskedCvr === out.cardArqc;
+      out.verdict = (out.match || out.matchMaskedCvr) ? 'PASS' : 'FAIL';
+    }
+    if (b.arc) out.arpc = ecosArpcAes(skac, out.computedArqc, clean(b.arc));
     res.json(out);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

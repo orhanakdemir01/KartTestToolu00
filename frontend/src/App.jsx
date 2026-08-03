@@ -7,6 +7,7 @@ import { ApduTab } from './components/tabs/ApduTab.jsx';
 import { TestTab } from './components/tabs/TestTab.jsx';
 import { CapkTab } from './components/tabs/CapkTab.jsx';
 import { KeysTab } from './components/tabs/KeysTab.jsx';
+import { EcosTab } from './components/tabs/EcosTab.jsx';
 import { PinTab } from './components/tabs/PinTab.jsx';
 import { CardImageTab } from './components/tabs/CardImageTab.jsx';
 import { OdaTab } from './components/tabs/OdaTab.jsx';
@@ -87,6 +88,7 @@ const TAB_GROUPS = [
   { id: 'keymgmt', label: 'Anahtarlar & PIN', icon: '🔑', tabs: [
     { id: 'capk', label: 'CA Anahtarları', icon: '🔑', desc: 'CAPK deposu (RID + index)' },
     { id: 'keys', label: 'Oturum Anahtarları', icon: '🗝', desc: 'AC / MAC / ENC oturum anahtarları' },
+    { id: 'ecos', label: 'ECOS (Kernel 8)', icon: '🆎', desc: 'Mastercard Ecos AES ARQC/ARPC doğrulama' },
     { id: 'pin', label: 'PIN Değiştir', icon: '🔢', desc: 'PIN değiştir / doğrula' },
   ] },
   { id: 'output', label: 'Sonuç & Yapılandırma', icon: '📄', tabs: [
@@ -140,9 +142,12 @@ function App() {
   const [arpcForm, setArpcForm] = useState({ keyLabel: '', keyPan: '', arc: '3030', csu: '03920000', method: 'auto' });
   const [arpcBusy, setArpcBusy] = useState(false);
   const [arpcResult, setArpcResult] = useState(null);
-  const [ecosForm, setEcosForm] = useState({ keyLabel: '', keyPan: '', arc: '3030' });
+  const [ecosForm, setEcosForm] = useState({ keyLabel: '', keyPan: '', arc: '3030', cda: false });
   const [ecosBusy, setEcosBusy] = useState(false);
   const [ecosResult, setEcosResult] = useState(null);
+  const [ecosManForm, setEcosManForm] = useState({ keyLabel: '', keyPan: '', atc: '', cardArqc: '', arc: '3030', acInput: '', amountAuth: '', amountOther: '', termCountry: '', tvr: '', txnCurrency: '', txnDate: '', txnType: '', un: '', aip: '', cvr: '', iadExt: '', pan: '', psn: '00' });
+  const [ecosManBusy, setEcosManBusy] = useState(false);
+  const [ecosManResult, setEcosManResult] = useState(null);
   const [verifyForm, setVerifyForm] = useState({ pin: '' });
   const [verifyBusy, setVerifyBusy] = useState(false);
   const [verifyResult, setVerifyResult] = useState(null);
@@ -582,6 +587,20 @@ function App() {
         msg: `ECOS ARQC ${d.atc ? '· ATC ' + d.atc : ''} · kart ${d.cardArqc}${d.computedArqc ? ' · hesap ' + d.computedArqc : ''}${d.verdict ? ' · ' + d.verdict : ''}${d.keyError ? ' · ' + d.keyError : ''}` });
     } catch { setEcosResult({ error: 'Backend bağlantısı başarısız' }); }
     setEcosBusy(false);
+  };
+
+  // ECOS elle (terminal) — kart okumadan, verilen AC input/alanlarla ARQC hesapla.
+  const runEcosManual = async () => {
+    setEcosManBusy(true); setEcosManResult(null);
+    if (!ecosManForm.keyLabel || !ecosManForm.atc) { setEcosManResult({ error: 'AES anahtar ve ATC gerekli' }); setEcosManBusy(false); return; }
+    try {
+      const r = await fetch(`${API}/ecos/compute-arqc`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ecosManForm),
+      });
+      setEcosManResult(await r.json());
+    } catch { setEcosManResult({ error: 'Backend bağlantısı başarısız' }); }
+    setEcosManBusy(false);
   };
 
   // Verify the card's offline PIN in plaintext (EMV VERIFY 00 20 00 80).
@@ -1286,8 +1305,13 @@ ${apps}
         <KeysTab sessionKeys={sessionKeys} deleteSessionKey={deleteSessionKey}
           keyForm={keyForm} setKeyForm={setKeyForm} addSessionKey={addSessionKey} keyAddResult={keyAddResult}
           keyEdit={keyEdit} startEditKey={startEditKey} cancelEditKey={cancelEditKey} updateSessionKey={updateSessionKey}
-          arpcForm={arpcForm} setArpcForm={setArpcForm} runArpc={runArpc} arpcBusy={arpcBusy} arpcResult={arpcResult} cardPresent={cardPresent}
-          ecosForm={ecosForm} setEcosForm={setEcosForm} runEcosVerify={runEcosVerify} ecosBusy={ecosBusy} ecosResult={ecosResult} />
+          arpcForm={arpcForm} setArpcForm={setArpcForm} runArpc={runArpc} arpcBusy={arpcBusy} arpcResult={arpcResult} cardPresent={cardPresent} />
+      )}
+
+      {activeTab === 'ecos' && (
+        <EcosTab sessionKeys={sessionKeys} cardPresent={cardPresent}
+          ecosForm={ecosForm} setEcosForm={setEcosForm} runEcosVerify={runEcosVerify} ecosBusy={ecosBusy} ecosResult={ecosResult}
+          ecosManForm={ecosManForm} setEcosManForm={setEcosManForm} runEcosManual={runEcosManual} ecosManBusy={ecosManBusy} ecosManResult={ecosManResult} />
       )}
 
       {activeTab === 'pin' && (

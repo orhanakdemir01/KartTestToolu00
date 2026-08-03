@@ -133,8 +133,9 @@ export async function discoverCardContext(preferReader, opts = {}) {
       // issuer authentication and the script is refused (6985). Its ATC comes
       // from that GENERATE AC, so prefer it over the GET DATA value.
       const isTroy = (aid || '').slice(0, 10) === 'A000000672';
-      const genP1 = isTroy ? '00' : '80';
-      const ac = await step(`GENERATE AC (${isTroy ? 'AAC' : 'ARQC'})`, `80AE${genP1}00${toLen(cdolData)}${cdolData}00`);
+      // opts.genP1 override (ör. '90' = ARQC+CDA teşhis için); yoksa Troy AAC, diğer ARQC.
+      const genP1 = opts.genP1 || (isTroy ? '00' : '80');
+      const ac = await step(`GENERATE AC (${genP1})`, `80AE${genP1}00${toLen(cdolData)}${cdolData}00`);
       if (ac.ok) {
         const t80ac = findTag(ac.tlv.nodes, '80');
         if (t80ac) {

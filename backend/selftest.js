@@ -9,8 +9,8 @@
 // Kart-yer vektörleri EFEMER (işlem-başı) session key + terminal veri içerir;
 // master anahtar veya PAN İÇERMEZ (güvenli olarak repo'da saklanabilir).
 import { retailMac, kcv, tdesEcbEncrypt, computeArpc, computeArpcMethod2, deriveIccMasterKey, deriveSessionKey } from './crypto3des.js';
-import { aesCmac, deriveAcSessionKeyAes, ecosArqcAes } from './cryptoaes.js';
-import { ecdsaVerifyP256, ecSdsaVerifyP256 } from './odaecc.js';
+import { aesCmac, deriveAcSessionKeyAes, ecosArqcAes, bdhKdk, bdhSessionKeys, bdhDecrypt } from './cryptoaes.js';
+import { ecdsaVerifyP256, ecSdsaVerifyP256, ecdhSharedX } from './odaecc.js';
 
 // Ecos Appendix B AC Input Data (Tablo 21, extended) — çözümlü örnek girdisi.
 const ECOS_AC_INPUT = '00000001000000000000100008400000001080084015112400111111111B800001A080032420000000000000000000';
@@ -113,6 +113,21 @@ const VECTORS = [
       '035824B9DD96765B97A0CC52C1B668B075ED86BE31DA1159C6F9128863B75A80',
       'BD863084A1C965C681AE72DF3B58A9CA8AEC8463DEF0A7FA35C0EE83A5269F65')),
     expect: 'true' },
+
+  // ── ECOS Kernel 8 BDH (temassız privacy) — gerçek terminal logu + Appendix B ──
+  // Tüm zincir: ECDH shared-x → Kdk → SKC/SKI → AES-CTR privacy decrypt. İki bağımsız kaynak.
+  { name: 'BDH ECDH shared-x (dT·P) · P-256', kind: 'independent', ref: 'Mastercard Ecos Appendix B (BDH)',
+    run: () => ecdhSharedX('7D6FD7D5B428CF88A1A8B0F2A6A0DC563B6882CBCB09DB8C63E05E78B008C2E7', 'D4D37071C5EC5AC817FE5B7500E623A1323DEC9241DE35099834FB0618A062EC'),
+    expect: '154CC3AAB0FCCC8F94FF3CFEE1BFD5AE4498AFF011CA027D1860FFF10F7C296D' },
+  { name: 'BDH Kdk = AES-CMAC(0,z)', kind: 'independent', ref: 'Ecos gerçek kart logu + Appendix B',
+    run: () => bdhKdk('D357F2828C277D1BA57E648F9D6DA0F9210BB9AB5FBAE12FA16D5FC106AF5AF1'),
+    expect: '5474A8474FCFE48BF1D55CD1FAE548D0' },
+  { name: 'BDH SKC‖SKI = AES-ECB(Kdk, derivdata)', kind: 'independent', ref: 'Ecos gerçek kart logu',
+    run: () => { const s = bdhSessionKeys('5474A8474FCFE48BF1D55CD1FAE548D0'); return s.skc + s.ski; },
+    expect: '1A6D09070FB3FB4EFDAF2812D9071A23D94E07B99E66681255DDF67827C93057' },
+  { name: 'BDH AES-CTR privacy decrypt (PAN kaydı)', kind: 'independent', ref: 'Ecos gerçek kart logu',
+    run: () => bdhDecrypt('1A6D09070FB3FB4EFDAF2812D9071A23', 2, 'AADA2E9F1054EB3FDAA4'),
+    expect: '5A085407091027970018' },
 ];
 
 export function runSelfTest() {

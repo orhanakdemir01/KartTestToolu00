@@ -208,4 +208,21 @@ export function parseEcosIad(iadHex) {
   return { kdi, cvn, cvnDecoded: decodeEcosCvn(cvn), cvr, cvrDecoded: decodeEcosCvr(cvr), iadExt: ext, raw: h };
 }
 
+// ── ECOS Kernel 8 BDH (Blinded Diffie-Hellman) privacy — kaynak: gerçek terminal
+// logu + Appendix B (ikisiyle de kanıtlı). z = ECDH shared secret x (odaecc.ecdhSharedX).
+// Kdk = AES-CMAC(0^16, z); SKC/SKI = AES-ECB(Kdk, keyId‖CTX‖80). CTX sabit (spec).
+const BDH_CTX = '010054334A325957773DA5A5A501';
+export function bdhKdk(zHex) { return aesCmac('00000000000000000000000000000000', clean(zHex)); }
+export function bdhSessionKeys(kdkHex) {
+  const k = hexToBuf(kdkHex);
+  const sk = (id) => bufToHex(aesEcbBlock(k, hexToBuf(id + BDH_CTX + '80')));
+  return { skc: sk('01'), ski: sk('02') };
+}
+// Privacy decrypt: AES-128-CTR(SKC, IV=80‖counter(1B)‖00×14). counter: 0=blinding, 1..=kayıtlar.
+export function bdhDecrypt(skcHex, counter, dataHex) {
+  const iv = '80' + (counter & 0xff).toString(16).padStart(2, '0') + '00'.repeat(14);
+  const d = crypto.createDecipheriv('aes-128-ctr', hexToBuf(skcHex), hexToBuf(iv));
+  return bufToHex(Buffer.concat([d.update(hexToBuf(clean(dataHex))), d.final()]));
+}
+
 export const _internal = { aesEcbBlock, cmacSubkeys, bufToHex, hexToBuf, clean };

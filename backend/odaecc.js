@@ -103,4 +103,19 @@ export function verifyEccCert(certHex, parentPkXHex) {
   return { ok: false, M, R, S, error: 'EC-SDSA imza doğrulanamadı' };
 }
 
+// ECDH shared secret x-koordinatı (BDH): z = (dT · Pub).x. Pub ham x (+ops. y).
+// Not: y-paritesi z'yi değiştirmez (−P ile P aynı x) → yalnız x yeterli.
+export function ecdhSharedX(dTHex, pubXHex, pubYHex) {
+  const y = pubYHex ? hexToBig(pubYHex) : hexToBig(decompressP256(pubXHex) || '0');
+  const S = pMul({ x: hexToBig(pubXHex), y }, hexToBig(dTHex));
+  return S ? big32(S.x) : null;
+}
+
+// Efemer terminal anahtar çifti (dT rastgele, QT = dT·G). GPO'da QT gönderilir.
+export function genEphemeralP256() {
+  const dT = bmod(BigInt('0x' + crypto.randomBytes(32).toString('hex')), P256.n - 1n) + 1n;
+  const Q = pMul({ x: P256.Gx, y: P256.Gy }, dT);
+  return { dT: big32(dT), qx: big32(Q.x), qy: big32(Q.y) };
+}
+
 export const _ecc = { pAdd, pMul, pNeg, P256, decompressP256 };

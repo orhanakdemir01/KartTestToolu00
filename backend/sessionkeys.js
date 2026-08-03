@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { kcv } from './crypto3des.js';
+import { aesKcv } from './cryptoaes.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FILE = join(HERE, 'sessionkeys.json');
@@ -30,22 +31,29 @@ export function findExact(label, pan) {
 
 // Validate + normalise a key-set input, computing KCVs. Returns { key } or { error }.
 function buildKeySet(input) {
+  // keyType: 3des (varsayılan) · aes128 · aes256. ECOS/Kernel 8 AES kartları için.
+  const keyType = ['3des', 'aes128', 'aes256'].includes(input.keyType) ? input.keyType : '3des';
+  const isAes = keyType !== '3des';
+  const expBytes = keyType === 'aes256' ? 32 : 16;      // AES-256 → 32B, diğerleri 16B
+  const kcvFn = isAes ? aesKcv : kcv;                    // AES KCV = AES(k,0)[:3]
+  const lenMsg = `${expBytes} bayt (${expBytes * 2} hex)`;
   const k = {
     label: (input.label || '').trim() || 'Anahtar seti',
     pan: clean(input.pan),
     psn: clean(input.psn) || '00',
     keyLevel: ['master', 'icc', 'session', 'auto'].includes(input.keyLevel) ? input.keyLevel : 'master',
     cvn: (input.cvn || 'mastercard'),
+    keyType,
     acKey: clean(input.acKey),
     macKey: clean(input.macKey),
     encKey: clean(input.encKey),
   };
-  if (!isHex(k.acKey, 16)) return { error: 'AC anahtarı 16 bayt (32 hex) olmalı', acKcv: '', macKcv: '', encKcv: '' };
-  if (k.macKey && !isHex(k.macKey, 16)) return { error: 'MAC anahtarı 16 bayt (32 hex) olmalı' };
-  if (k.encKey && !isHex(k.encKey, 16)) return { error: 'ENC anahtarı 16 bayt (32 hex) olmalı' };
-  k.acKcv = kcv(k.acKey);
-  k.macKcv = k.macKey ? kcv(k.macKey) : '';
-  k.encKcv = k.encKey ? kcv(k.encKey) : '';
+  if (!isHex(k.acKey, expBytes)) return { error: `AC anahtarı ${lenMsg} olmalı`, acKcv: '', macKcv: '', encKcv: '' };
+  if (k.macKey && !isHex(k.macKey, expBytes)) return { error: `MAC anahtarı ${lenMsg} olmalı` };
+  if (k.encKey && !isHex(k.encKey, expBytes)) return { error: `ENC anahtarı ${lenMsg} olmalı` };
+  k.acKcv = kcvFn(k.acKey);
+  k.macKcv = k.macKey ? kcvFn(k.macKey) : '';
+  k.encKcv = k.encKey ? kcvFn(k.encKey) : '';
   const exp = (s) => clean(s);
   const mism = [];
   if (input.acKcv && exp(input.acKcv) !== k.acKcv) mism.push(`AC KCV ${k.acKcv}≠${exp(input.acKcv)}`);

@@ -14,6 +14,7 @@ import { BUILTIN_SUITES, swMatch } from './testsuites.js';
 import { listKeys, keysForRid, findKey, schemes, verifyKey, addKey, updateKey, deleteKey } from './capk.js';
 import { computeArpc, computeArpcMethod2, deriveIccMasterKey, verifyArqcAuto } from './crypto3des.js';
 import { listKeysMasked, addKeySet, updateKeySet, deleteKeySet, getKeySet, findExact } from './sessionkeys.js';
+import { deriveAcSessionKeyAes, deriveIccMasterKeyAes, buildEcosAcInput, ecosArqcAes, ecosArpcAes, parseEcosIad } from './cryptoaes.js';
 import { buildPinChange, buildUnblockVariants, buildVerifyPlaintext } from './changepin.js';
 import { discoverCardContext } from './carddiscover.js';
 import { extractCardImage } from './cardimage.js';
@@ -230,6 +231,59 @@ app.get('/api/manifest', (req, res) => {
 
 // GET /api/selftest — kripto öz-testi (karta ihtiyaç duymadan bağımsız vektörler).
 app.get('/api/selftest', (req, res) => res.json(runSelfTest()));
+
+// POST /api/ecos/verify-arqc — ECOS (Mastercard Kernel 8 / Ecos Contact) kartından
+// GENERATE AC ile gerçek ARQC al, EMV CSK-AES yöntemiyle (kaynak: Ecos Issuer Impl.)
+// AC input kur, seçilen AES anahtarıyla ARQC hesapla ve karttakiyle karşılaştır.
+app.post('/api/ecos/verify-arqc', async (req, res) => {
+  const preferReader = req.body?.reader || undefined;
+  if (!usingRealReader() || !pcsc.getActiveCard(preferReader)?.connected) {
+    return res.status(404).json({ error: 'Okuyucuda kart yok' });
+  }
+  try {
+    const ctx = await discoverCardContext(preferReader, {});
+    if (ctx.error) return res.json({ error: ctx.error });
+    if (!ctx.arqc || !ctx.atc) return res.json({ error: 'Karttan ARQC/ATC alınamadı (GENERATE AC başarısız)' });
+    const td = terminalDefaults();
+    const iad = parseEcosIad(ctx.iad || '');
+    const cvn = iad?.cvnDecoded || null;
+    const cvr = iad?.cvr || '';
+    const ext = (cvn?.extendedInput && iad?.iadExt) ? iad.iadExt : '';
+    const terminal = {
+      amountAuth: td['9F02'], amountOther: td['9F03'], termCountry: td['9F1A'],
+      tvr: td['95'], txnCurrency: td['5F2A'], txnDate: td['9A'], txnType: td['9C'], un: td['9F37'],
+    };
+    const acInput = buildEcosAcInput({ ...terminal, aip: ctx.aip, atc: ctx.atc, cvr, iadExt: ext });
+    const out = {
+      pan: ctx.pan, aid: ctx.aid, atc: ctx.atc, aip: ctx.aip, cardArqc: ctx.arqc,
+      iad: ctx.iad, cvn, cvr, extendedInput: !!ext, terminal, acInput,
+    };
+    // Anahtar seçiliyse doğrula (icc=MKac · session=SKac · master=IMK→MKac→SKac)
+    const { keyLabel, keyPan, arc, csu } = req.body || {};
+    if (keyLabel) {
+      const k = findExact(keyLabel, keyPan || '');
+      if (!k) out.keyError = 'Seçilen anahtar bulunamadı';
+      else if ((k.keyType || '3des') === '3des') out.keyError = 'Seçilen anahtar 3DES — ECOS ARQC için AES anahtar gerekli';
+      else {
+        try {
+          let mkac = null, skac = null;
+          if (k.keyLevel === 'session') skac = k.acKey;
+          else if (k.keyLevel === 'icc') { mkac = k.acKey; skac = deriveAcSessionKeyAes(mkac, ctx.atc); }
+          else { mkac = deriveIccMasterKeyAes(k.acKey, ctx.pan, ctx.psn); skac = deriveAcSessionKeyAes(mkac, ctx.atc); }
+          const computed = ecosArqcAes(skac, acInput);
+          out.keyLabel = k.label; out.keyLevel = k.keyLevel; out.mkac = mkac; out.skac = skac;
+          out.computedArqc = computed;
+          out.match = computed.toUpperCase() === (ctx.arqc || '').toUpperCase();
+          out.verdict = out.match ? 'PASS' : 'FAIL';
+          if (out.match && arc) {
+            out.arpc = ecosArpcAes(skac, ctx.arqc, arc.replace(/\s/g, '')); // ARPC-RC = ARC (2 bayt)
+          }
+        } catch (e) { out.keyError = e.message; }
+      }
+    }
+    res.json(out);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 // POST /api/scenario/run — run selected terminal-profile scenarios against the
 // card and report the resulting card decision (TC/ARQC/AAC) vs the expectation.

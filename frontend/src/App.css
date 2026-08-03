@@ -488,6 +488,7 @@ a:hover { color: #1a9850; text-decoration: underline; }
 .arqc-verify { margin-top: 12px; }
 .arqc-verify .capk-ok, .arqc-verify .err-text { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
 .kcv-tag { color: #2563a8; font-size: 10px; }
+.kcv-tag.aes { background: #ede9fe; color: #6d28d9; font-weight: 700; padding: 1px 6px; border-radius: 5px; }
 .emv-controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .keyset-pick { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #8b9199; }
 .keyset-pick select { padding: 8px 10px; background: #f5f8f6; border: 1px solid #d9e0db; border-radius: 8px; color: #1f2733; font-size: 13px; font-family: inherit; }

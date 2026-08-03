@@ -130,7 +130,7 @@ function App() {
   const [addResult, setAddResult] = useState(null);
   const [capkEdit, setCapkEdit] = useState(null); // { origRid, origIndex } while editing, else null
   const [sessionKeys, setSessionKeys] = useState([]);
-  const [keyForm, setKeyForm] = useState({ label: '', pan: '', psn: '00', keyLevel: 'master', cvn: 'mastercard', acKey: '', macKey: '', encKey: '' });
+  const [keyForm, setKeyForm] = useState({ label: '', pan: '', psn: '00', keyLevel: 'master', cvn: 'mastercard', keyType: '3des', acKey: '', macKey: '', encKey: '' });
   const [keyAddResult, setKeyAddResult] = useState(null);
   const [keyEdit, setKeyEdit] = useState(null); // { origLabel, origPan } while editing, else null
   const [selectedKeyIdx, setSelectedKeyIdx] = useState(-1);
@@ -140,6 +140,9 @@ function App() {
   const [arpcForm, setArpcForm] = useState({ keyLabel: '', keyPan: '', arc: '3030', csu: '03920000', method: 'auto' });
   const [arpcBusy, setArpcBusy] = useState(false);
   const [arpcResult, setArpcResult] = useState(null);
+  const [ecosForm, setEcosForm] = useState({ keyLabel: '', keyPan: '', arc: '3030' });
+  const [ecosBusy, setEcosBusy] = useState(false);
+  const [ecosResult, setEcosResult] = useState(null);
   const [verifyForm, setVerifyForm] = useState({ pin: '' });
   const [verifyBusy, setVerifyBusy] = useState(false);
   const [verifyResult, setVerifyResult] = useState(null);
@@ -470,7 +473,7 @@ function App() {
 
   const loadSuite = (s) => { setSuiteJson(JSON.stringify(s, null, 2)); setTestResult(null); };
 
-  const emptyKeyForm = { label: '', pan: '', psn: '00', keyLevel: 'master', cvn: 'mastercard', acKey: '', macKey: '', encKey: '' };
+  const emptyKeyForm = { label: '', pan: '', psn: '00', keyLevel: 'master', cvn: 'mastercard', keyType: '3des', acKey: '', macKey: '', encKey: '' };
 
   const addSessionKey = async () => {
     setKeyAddResult(null);
@@ -490,7 +493,7 @@ function App() {
       if (!r.ok) { addTrace({ kind: 'error', msg: 'Anahtar okunamadı' }); return; }
       const f = await r.json();
       setKeyEdit({ origLabel: f.label, origPan: f.pan });
-      setKeyForm({ label: f.label, pan: f.pan, psn: f.psn || '00', keyLevel: f.keyLevel || 'auto', cvn: f.cvn || 'mastercard', acKey: f.acKey || '', macKey: f.macKey || '', encKey: f.encKey || '' });
+      setKeyForm({ label: f.label, pan: f.pan, psn: f.psn || '00', keyLevel: f.keyLevel || 'auto', cvn: f.cvn || 'mastercard', keyType: f.keyType || '3des', acKey: f.acKey || '', macKey: f.macKey || '', encKey: f.encKey || '' });
     } catch { addTrace({ kind: 'error', msg: 'Anahtar okunamadı (backend?)' }); }
   };
   const cancelEditKey = () => { setKeyEdit(null); setKeyForm(emptyKeyForm); setKeyAddResult(null); };
@@ -560,6 +563,25 @@ function App() {
         msg: `ARPC ${d.methodUsed?.toUpperCase()} · ${d.verdict || 'üretildi'}${d.sent ? ` · ${d.sent.cidLabel || d.sent.swText || d.sent.sw}` : ''}` });
     } catch { setArpcResult({ error: 'Backend bağlantısı başarısız' }); }
     setArpcBusy(false);
+  };
+
+  // ECOS (Kernel 8 / Ecos Contact) — karttan gerçek ARQC al, EMV CSK-AES ile doğrula.
+  const runEcosVerify = async () => {
+    setEcosBusy(true); setEcosResult(null);
+    if (!ecosForm.keyLabel) { setEcosResult({ error: 'AES anahtar seti seçin' }); setEcosBusy(false); return; }
+    addTrace({ kind: 'event', msg: '═══ ECOS AES ARQC doğrulama başlatıldı ═══' });
+    try {
+      const r = await fetch(`${API}/ecos/verify-arqc`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(withReader({ ...ecosForm })),
+      });
+      const d = await r.json();
+      setEcosResult(d);
+      if (d.error) addTrace({ kind: 'error', msg: `ECOS: ${d.error}` });
+      else addTrace({ kind: d.match ? 'ok' : d.keyError ? 'warn' : 'event',
+        msg: `ECOS ARQC ${d.atc ? '· ATC ' + d.atc : ''} · kart ${d.cardArqc}${d.computedArqc ? ' · hesap ' + d.computedArqc : ''}${d.verdict ? ' · ' + d.verdict : ''}${d.keyError ? ' · ' + d.keyError : ''}` });
+    } catch { setEcosResult({ error: 'Backend bağlantısı başarısız' }); }
+    setEcosBusy(false);
   };
 
   // Verify the card's offline PIN in plaintext (EMV VERIFY 00 20 00 80).
@@ -1264,7 +1286,8 @@ ${apps}
         <KeysTab sessionKeys={sessionKeys} deleteSessionKey={deleteSessionKey}
           keyForm={keyForm} setKeyForm={setKeyForm} addSessionKey={addSessionKey} keyAddResult={keyAddResult}
           keyEdit={keyEdit} startEditKey={startEditKey} cancelEditKey={cancelEditKey} updateSessionKey={updateSessionKey}
-          arpcForm={arpcForm} setArpcForm={setArpcForm} runArpc={runArpc} arpcBusy={arpcBusy} arpcResult={arpcResult} cardPresent={cardPresent} />
+          arpcForm={arpcForm} setArpcForm={setArpcForm} runArpc={runArpc} arpcBusy={arpcBusy} arpcResult={arpcResult} cardPresent={cardPresent}
+          ecosForm={ecosForm} setEcosForm={setEcosForm} runEcosVerify={runEcosVerify} ecosBusy={ecosBusy} ecosResult={ecosResult} />
       )}
 
       {activeTab === 'pin' && (

@@ -9,6 +9,11 @@
 // Kart-yer vektörleri EFEMER (işlem-başı) session key + terminal veri içerir;
 // master anahtar veya PAN İÇERMEZ (güvenli olarak repo'da saklanabilir).
 import { retailMac, kcv, tdesEcbEncrypt, computeArpc, computeArpcMethod2, deriveIccMasterKey, deriveSessionKey } from './crypto3des.js';
+import { aesCmac, deriveAcSessionKeyAes, ecosArqcAes } from './cryptoaes.js';
+import { ecdsaVerifyP256 } from './odaecc.js';
+
+// Ecos Appendix B AC Input Data (Tablo 21, extended) — çözümlü örnek girdisi.
+const ECOS_AC_INPUT = '00000001000000000000100008400000001080084015112400111111111B800001A080032420000000000000000000';
 
 const clean = (s) => (s || '').replace(/\s/g, '').toUpperCase();
 
@@ -57,6 +62,37 @@ const VECTORS = [
   { name: 'ARPC Method 1 (3DES · ARQC⊕ARC)', kind: 'regression', ref: 'kendi-referans · 3DES bağımsız kanıtlı (transitif)',
     run: () => computeArpc({ acKey: 'AC8729D32A1C90E76D95A56FB0AD2957', keyLevel: 'session', arqc: '09CE06536A2E9E4D', arc: '3030' }).arpc,
     expect: 'AFC33D616213F36C' },
+
+  // ── ECOS / Kernel 8 — modern kripto ilkelleri (AES + ECC), BAĞIMSIZ ──
+  // AES-CMAC, AES ARQC/MAC'in çekirdeğidir; RFC 4493 dört-blok bilinen-cevabı.
+  { name: 'AES-CMAC · RFC 4493 (64B)', kind: 'independent', ref: 'NIST SP800-38B / RFC 4493 KAT',
+    run: () => aesCmac('2B7E151628AED2A6ABF7158809CF4F3C',
+      '6BC1BEE22E409F96E93D7E117393172AAE2D8A571E03AC9C9EB76FAC45AF8E5130C81C46A35CE411E5FBC1191A0A52EFF69F2445DF4F9B17AD2B417BE66C3710'),
+    expect: '51F0BEBF7E3B9D92FC49741779363CFE' },
+  // ECDSA P-256, ECC ODA sertifika-zincirinin imza doğrulama çekirdeğidir.
+  { name: 'ECDSA P-256 imza doğrulama · RFC 6979', kind: 'independent', ref: 'RFC 6979 A.2.5 (P-256/SHA-256 "sample")',
+    run: () => String(ecdsaVerifyP256(
+      '60FED4BA255A9D31C961EB74C6356D68C049B8923B61FA6CE669622E60F29FB6',
+      '7903FE1008B8BC99A41AE9E95628BC64F2F1B20C2D7E9F5177A3C294D4462299',
+      'sample',
+      'EFD48B2AACB6A8FD1140DD9CD45E81D69D2C877B56AAF991C34D0EA84EAF3716',
+      'F7CB1C942D657C41D436C7A1B6E29F65F3E900DBB9AFF4064DC4AB2F843ACDA8')),
+    expect: 'true' },
+
+  // ── ECOS AES ARQC — Mastercard'ın kendi çözümlü örnekleri (Appendix B), BAĞIMSIZ ──
+  // Tam zincir MKAC→SKAC(EMV CSK AES)→AES-CMAC(AC Input). Karta/gizli anahtara gerek yok:
+  // Mastercard dokümanının bilinen-cevap vektörü → GERÇEK doğruluk kanıtı.
+  { name: 'Ecos AES-128 ARQC (MKAC→SKAC→CMAC)', kind: 'independent', ref: 'Mastercard Ecos v1.0 Appendix B',
+    run: () => ecosArqcAes(deriveAcSessionKeyAes('2EF6E07ECBA86BCF3C3CFF7BBEBE6F38', '0001'), ECOS_AC_INPUT),
+    expect: '25038F4A7BDE69E2' },
+  { name: 'Ecos AES-256 ARQC (MKAC→SKAC→CMAC)', kind: 'independent', ref: 'Mastercard Ecos v1.0 Appendix B',
+    run: () => ecosArqcAes(deriveAcSessionKeyAes('14D63F23982740AC65B482BAF5913092D8132BAA4143A24D3CF437232711A507', '0001'), ECOS_AC_INPUT),
+    expect: '1847D8073E4D181D' },
+  // Kernel 8 EDA MAC = AES-CMAC(SKi, 0000‖AC‖IAD-MAC)[:8]. SKi ECC/BDH'den gelir;
+  // burada worked SKi + AC + IAD-MAC ile SKi tabanlı integrity MAC yolu kanıtlanır.
+  { name: 'Ecos K8 EDA MAC (SKi · AES-CMAC)', kind: 'independent', ref: 'Mastercard Ecos v1.0 Appendix B (Kernel 8 txn)',
+    run: () => aesCmac('642373F56192B09B132C7E024164D3A7', '00005C3319D5D8A4B2751D24D5CEE99FD2E1').slice(0, 16),
+    expect: 'A4624217FDD8E4B1' },
 ];
 
 export function runSelfTest() {

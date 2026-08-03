@@ -14,7 +14,9 @@ import { BUILTIN_SUITES, swMatch } from './testsuites.js';
 import { listKeys, keysForRid, findKey, schemes, verifyKey, addKey, updateKey, deleteKey } from './capk.js';
 import { computeArpc, computeArpcMethod2, deriveIccMasterKey, verifyArqcAuto } from './crypto3des.js';
 import { listKeysMasked, addKeySet, updateKeySet, deleteKeySet, getKeySet, findExact } from './sessionkeys.js';
-import { deriveAcSessionKeyAes, deriveIccMasterKeyAes, buildEcosAcInput, ecosArqcAes, ecosArpcAes, parseEcosIad } from './cryptoaes.js';
+import { deriveAcSessionKeyAes, deriveIccMasterKeyAes, buildEcosAcInput, ecosArqcAes, ecosArpcAes, parseEcosIad, bdhKdk, bdhSessionKeys, bdhDecrypt } from './cryptoaes.js';
+import { genEphemeralP256, ecdhSharedX, verifyEccCert, ecSdsaVerifyP256, decompressP256 } from './odaecc.js';
+import { findAllTags, parseAfl } from './emv.js';
 import { buildPinChange, buildUnblockVariants, buildVerifyPlaintext } from './changepin.js';
 import { discoverCardContext } from './carddiscover.js';
 import { extractCardImage } from './cardimage.js';
@@ -340,6 +342,102 @@ app.post('/api/ecos/compute-arqc', (req, res) => {
     if (b.arc) out.arpc = ecosArpcAes(skac, out.computedArqc, clean(b.arc));
     res.json(out);
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/ecos/contactless-oda — CANLI temassız Kernel 8 ECC ODA doğrulama.
+// Efemer GPO (QT gönder) → 9F8103 (blinded key + E(r)) → BDH (z→Kdk→SKC/SKI) →
+// kayıtları AES-CTR ile decrypt → EC-SDSA cert zinciri (CA→Issuer→Card) doğrula.
+const clean0 = (s) => (s || '').replace(/\s/g, '').toUpperCase();
+app.post('/api/ecos/contactless-oda', async (req, res) => {
+  const preferReader = req.body?.reader || undefined;
+  if (!usingRealReader() || !pcsc.getActiveCard(preferReader)?.connected) {
+    return res.status(404).json({ error: 'Okuyucuda kart yok' });
+  }
+  const steps = [];
+  const tx = async (name, cmd) => {
+    const { response, sw } = await transmitChain(clean0(cmd), preferReader);
+    const tlv = tlvFromResponse(response);
+    steps.push({ name, command: clean0(cmd), response, sw, swText: describeSw(sw), ok: sw === '9000', tlv });
+    return { response: clean0(response), sw, tlv };
+  };
+  try {
+    const eph = genEphemeralP256();                 // {dT, qx, qy}
+    const aid = clean0(req.body?.aid) || 'A0000000041010';
+    await tx(`SELECT AID`, `00A40400${(aid.length / 2).toString(16).padStart(2, '0')}${aid}00`);
+    // GPO: PDOL = 9F2B(2B, ECC tetikleyici) + 9E(64B = QT.x‖QT.y)
+    const p9f2b = (clean0(req.body?.p9f2b) || '0200').padStart(4, '0').slice(-4);
+    const pdolData = p9f2b + eph.qx + eph.qy;
+    const gpoData = '83' + (pdolData.length / 2).toString(16).padStart(2, '0') + pdolData;
+    const gpo = await tx(`GET PROCESSING OPTIONS (ECC)`, `80A80000${(gpoData.length / 2).toString(16).padStart(2, '0')}${gpoData}00`);
+    const nodes = gpo.tlv.nodes;
+    const ckd = clean0(findTag(nodes, '9F8103')?.value);   // 64B: blindedX(32)+E(r)(32)
+    const aip = clean0(findTag(nodes, '82')?.value);
+    const afl = clean0(findTag(nodes, '94')?.value);
+    const out = { pan: null, aip, afl, ephemeral: { qx: eph.qx, qy: eph.qy }, cardKeyData: ckd, steps };
+    if (!ckd || ckd.length < 128) return res.json({ error: 'ECC/BDH modu tetiklenemedi (9F8103 gelmedi). Bu kart RSA varyantı olabilir.', ...out });
+    // ── BDH: shared secret → session keys ──
+    const blindedX = ckd.slice(0, 64), Er = ckd.slice(64, 128);
+    const z = ecdhSharedX(eph.dT, blindedX);
+    const kdk = bdhKdk(z);
+    const { skc, ski } = bdhSessionKeys(kdk);
+    const blindingFactor = bdhDecrypt(skc, 0, Er);
+    out.bdh = { blindedX, encryptedBlindingFactor: Er, z, kdk, skc, ski, blindingFactor };
+    // ── AFL kayıtlarını oku + decrypt (DA container → AES-CTR, counter 1,2,…) ──
+    // Kayıt okuma: kart READ RECORD sayacını her okumada artırır (counter = okuma sırası).
+    // "local auth" AFL cert kayıtlarını (rec3-4) listemese de SFI4 rec1..6'yı tarayıp
+    // decrypt ederek cert'leri buluruz (rec bulunamazsa kart 6A83 döner, atlanır).
+    let counter = 1;
+    const allNodes = [];
+    out.records = [];
+    const sfi = 4;
+    for (let r = 1; r <= 6; r++) {
+      const p2 = (((sfi << 3) | 4) & 0xff).toString(16).padStart(2, '0').toUpperCase();
+      const rec = await tx(`READ RECORD SFI${sfi} #${r}`, `00B2${r.toString(16).padStart(2, '0').toUpperCase()}${p2}00`);
+      if (rec.sw !== '9000') { steps.pop(); continue; } // 6A83 = kayıt yok
+      const enc = clean0(findTag(rec.tlv.nodes, 'DA')?.value);
+      let dec = null, plain = null;
+      if (enc) {
+        // Şifreli kayıt (gizlilik korumalı): AES-CTR ile çöz; sayaç yalnız şifreli
+        // kayıtlarda artar (düz kayıtlar kart READ sayacını etkilemez).
+        dec = bdhDecrypt(skc, counter, enc); counter++;
+        // Çözülmüş veri saf TLV (SW yok); tlvFromResponse son 2 baytı SW sanıp
+        // keser → dummy '9000' ekleyerek gerçek veriyi koru.
+        const dt = tlvFromResponse(dec + '9000'); if (dt?.nodes) allNodes.push(...dt.nodes);
+      } else if (rec.tlv?.nodes?.length) {
+        // Düz-metin kayıt (public): Issuer cert (90) + CA index (8F) şifrelenmez.
+        plain = clean0(rec.response); allNodes.push(...rec.tlv.nodes);
+      }
+      out.records.push({ sfi, record: r, encrypted: enc || null, decrypted: dec, plaintext: plain });
+    }
+    // ── Sertifikaları çıkar (decrypt edilmiş 70-template'lerden) ──
+    const caIndex = clean0(findTag(allNodes, '8F')?.value);
+    const issuerCert = clean0(findTag(allNodes, '90')?.value);      // Format 12 (ECC Issuer)
+    const cardCert = clean0(findTag(allNodes, '9F46')?.value);      // Format 14 (ECC Card)
+    const pan = clean0(findTag(allNodes, '5A')?.value) || clean0(findTag(allNodes, '57')?.value).split('D')[0];
+    out.pan = pan;
+    out.certs = { caIndex, issuerCert, cardCert };
+    // ── CA ECC PK (RID+index) — şimdilik log'daki test CA'sı; sonra depoya bağlanacak ──
+    const CA_ECC = { 'A000000004:E0': { x: 'F60DAECD42B48FCCA547D942204D6098F1A353A5CD25CBDF2EC1ABFD0170E0FC', y: '6FD75EAAB356BE98BAA8E99A6FCE303F0C952BC02B4F566F096DD6EFF20C8FE8' } };
+    const rid = aid.slice(0, 10);
+    const ca = CA_ECC[`${rid}:${caIndex}`];
+    const chain = { ca: !!ca };
+    if (ca && issuerCert) {
+      const iv = verifyEccCert(issuerCert, ca.x);
+      chain.issuer = iv.ok;
+      // Issuer PK.x cert'ten: header(21B) sonrası 32B (imzadan önceki 32B daha güvenli)
+      const issuerPkX = issuerCert.slice(issuerCert.length - 128 - 64, issuerCert.length - 128);
+      chain.issuerPkX = issuerPkX;
+      if (iv.ok && cardCert) {
+        const cv = verifyEccCert(cardCert, issuerPkX);
+        chain.card = cv.ok;
+        chain.cardPkX = cardCert.slice(cardCert.length - 128 - 64, cardCert.length - 128);
+      }
+    }
+    chain.ok = !!(chain.ca && chain.issuer && chain.card);
+    out.chain = chain;
+    out.verdict = chain.ok ? 'PASS' : 'PARTIAL';
+    res.json(out);
+  } catch (err) { res.status(500).json({ error: err.message, steps }); }
 });
 
 // POST /api/scenario/run — run selected terminal-profile scenarios against the

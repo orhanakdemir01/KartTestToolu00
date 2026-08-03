@@ -148,6 +148,9 @@ function App() {
   const [ecosManForm, setEcosManForm] = useState({ keyLabel: '', keyPan: '', atc: '', cardArqc: '', arc: '3030', acInput: '', amountAuth: '', amountOther: '', termCountry: '', tvr: '', txnCurrency: '', txnDate: '', txnType: '', un: '', aip: '', cvr: '', iadExt: '', pan: '', psn: '00' });
   const [ecosManBusy, setEcosManBusy] = useState(false);
   const [ecosManResult, setEcosManResult] = useState(null);
+  const [ecosOdaForm, setEcosOdaForm] = useState({ aid: 'A0000000041010', p9f2b: '0280' });
+  const [ecosOdaBusy, setEcosOdaBusy] = useState(false);
+  const [ecosOdaResult, setEcosOdaResult] = useState(null);
   const [verifyForm, setVerifyForm] = useState({ pin: '' });
   const [verifyBusy, setVerifyBusy] = useState(false);
   const [verifyResult, setVerifyResult] = useState(null);
@@ -601,6 +604,27 @@ function App() {
       setEcosManResult(await r.json());
     } catch { setEcosManResult({ error: 'Backend bağlantısı başarısız' }); }
     setEcosManBusy(false);
+  };
+
+  // ECOS temassız ECC ODA — canlı Kernel 8 BDH decrypt + EC-SDSA cert zinciri.
+  const runEcosOda = async () => {
+    setEcosOdaBusy(true); setEcosOdaResult(null);
+    addTrace({ kind: 'event', msg: '═══ ECOS temassız ECC ODA (BDH + EC-SDSA) başlatıldı ═══' });
+    try {
+      const r = await fetch(`${API}/ecos/contactless-oda`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(withReader({ ...ecosOdaForm })),
+      });
+      const d = await r.json();
+      setEcosOdaResult(d);
+      if (d.error) addTrace({ kind: 'error', msg: `ECOS ODA: ${d.error}` });
+      else {
+        const ch = d.chain || {};
+        addTrace({ kind: d.verdict === 'PASS' ? 'ok' : 'warn',
+          msg: `ECOS ODA ${d.verdict} · PAN ${d.pan || '?'} · CA ${ch.ca ? '✓' : '✗'} Issuer ${ch.issuer ? '✓' : '✗'} Card ${ch.card ? '✓' : '✗'}` });
+      }
+    } catch { setEcosOdaResult({ error: 'Backend bağlantısı başarısız' }); }
+    setEcosOdaBusy(false);
   };
 
   // Verify the card's offline PIN in plaintext (EMV VERIFY 00 20 00 80).
@@ -1311,7 +1335,8 @@ ${apps}
       {activeTab === 'ecos' && (
         <EcosTab sessionKeys={sessionKeys} cardPresent={cardPresent}
           ecosForm={ecosForm} setEcosForm={setEcosForm} runEcosVerify={runEcosVerify} ecosBusy={ecosBusy} ecosResult={ecosResult}
-          ecosManForm={ecosManForm} setEcosManForm={setEcosManForm} runEcosManual={runEcosManual} ecosManBusy={ecosManBusy} ecosManResult={ecosManResult} />
+          ecosManForm={ecosManForm} setEcosManForm={setEcosManForm} runEcosManual={runEcosManual} ecosManBusy={ecosManBusy} ecosManResult={ecosManResult}
+          ecosOdaForm={ecosOdaForm} setEcosOdaForm={setEcosOdaForm} runEcosOda={runEcosOda} ecosOdaBusy={ecosOdaBusy} ecosOdaResult={ecosOdaResult} />
       )}
 
       {activeTab === 'pin' && (

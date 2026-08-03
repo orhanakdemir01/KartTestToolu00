@@ -34,10 +34,60 @@ function EcosResultView({ r }) {
   );
 }
 
+// Temassız ECC ODA sonucu — BDH oturum anahtarları + EC-SDSA sertifika zinciri.
+function EcosOdaResultView({ r }) {
+  if (!r) return null;
+  if (r.error) return (
+    <div className="genac" style={{ marginTop: 10 }}>
+      <p className="err-text" style={{ fontWeight: 600 }}>✗ {r.error}</p>
+      {r.aip && <div className="oda-info"><span className="mono small">AIP {r.aip}</span>{r.afl && <span className="mono small">AFL {r.afl}</span>}</div>}
+    </div>
+  );
+  const ch = r.chain || {};
+  const bdh = r.bdh || {};
+  const step = (ok, label) => <span className={`oda-chip ${ok ? '' : 'alt'}`} style={{ background: ok ? undefined : 'transparent' }}>{ok ? '✓' : '○'} {label}</span>;
+  return (
+    <div className="genac" style={{ marginTop: 10 }}>
+      <p className={r.verdict === 'PASS' ? 'capk-ok' : 'oda-partial'} style={{ fontWeight: 600 }}>
+        {r.verdict === 'PASS' ? '✓ ECC ODA DOĞRULANDI (CA → Issuer → Card)' : `○ Kısmi — ${r.verdict}`}</p>
+      <div className="oda-info">
+        {r.pan && <span className="oda-chip">{r.pan}</span>}
+        {r.aip && <span className="mono small">AIP {r.aip}</span>}
+        {r.afl && <span className="mono small">AFL {r.afl}</span>}
+      </div>
+      <div className="oda-info" style={{ marginTop: 6 }}>
+        {step(ch.ca, `CA anahtarı (index ${r.certs?.caIndex || '?'})`)}
+        {step(ch.issuer, 'Issuer cert (EC-SDSA)')}
+        {step(ch.card, 'Card cert (EC-SDSA)')}
+      </div>
+      <table className="kv-table"><tbody>
+        {bdh.z && <tr><td>BDH z (ECDH.x)</td><td className="mono small muted" style={{ wordBreak: 'break-all' }}>{bdh.z}</td></tr>}
+        {bdh.kdk && <tr><td>Kdk</td><td className="mono small muted">{bdh.kdk}</td></tr>}
+        {bdh.skc && <tr><td>SKC (gizlilik)</td><td className="mono small muted">{bdh.skc}</td></tr>}
+        {bdh.ski && <tr><td>SKI (bütünlük)</td><td className="mono small muted">{bdh.ski}</td></tr>}
+        {r.certs?.issuerCert && <tr><td>Issuer cert ({r.certs.issuerCert.length / 2}B)</td><td className="mono small muted" style={{ wordBreak: 'break-all' }}>{r.certs.issuerCert}</td></tr>}
+        {r.certs?.cardCert && <tr><td>Card cert ({r.certs.cardCert.length / 2}B)</td><td className="mono small muted" style={{ wordBreak: 'break-all' }}>{r.certs.cardCert}</td></tr>}
+      </tbody></table>
+      {Array.isArray(r.records) && r.records.length > 0 && (
+        <details className="builder" style={{ marginTop: 8 }}>
+          <summary>Çözülen kayıtlar ({r.records.length})</summary>
+          <table className="kv-table"><tbody>
+            {r.records.map((rec, i) => (
+              <tr key={i}><td>SFI{rec.sfi} #{rec.record} {rec.encrypted ? '🔒' : '·'}</td>
+                <td className="mono small muted" style={{ wordBreak: 'break-all' }}>{rec.decrypted || rec.plaintext || '(boş)'}</td></tr>
+            ))}
+          </tbody></table>
+        </details>
+      )}
+    </div>
+  );
+}
+
 export function EcosTab({
   sessionKeys, cardPresent,
   ecosForm, setEcosForm, runEcosVerify, ecosBusy, ecosResult,
   ecosManForm, setEcosManForm, runEcosManual, ecosManBusy, ecosManResult,
+  ecosOdaForm, setEcosOdaForm, runEcosOda, ecosOdaBusy, ecosOdaResult,
 }) {
   const aesKeys = sessionKeys.filter((k) => (k.keyType || '3des') !== '3des');
   const keySelect = (form, setForm) => (
@@ -119,6 +169,21 @@ export function EcosTab({
           </div>
         </div>
         <EcosResultView r={ecosManResult} />
+      </section>
+
+      <section className="panel">
+        <div className="panel-head"><h2>3 · Temassız ECC ODA (Kernel 8 · BDH)</h2></div>
+        <p className="muted small">Temassız <b>Kernel 8</b> kartın çevrimdışı veri doğrulaması (ODA) — RSA yerine <b>ECC (P-256 · EC-SDSA)</b> sertifika zinciri. Akış: efemer GPO (QT gönder) → kart <span className="mono">9F8103</span> (blinded key + E(r)) döner → <b>BDH</b> ile <span className="mono">z → Kdk → SKC/SKI</span> → gizlilik-korumalı kayıtları <b>AES-CTR</b> ile çöz → <b>EC-SDSA</b> zinciri <span className="mono">CA → Issuer(90) → Card(9F46)</span> doğrula. Kartı <b>temassız okuyucuya</b> koyun.</p>
+        <div className="capk-add">
+          <div className="capk-add-row">
+            <label>AID<input className="mono" value={ecosOdaForm.aid} onChange={(e) => setEcosOdaForm({ ...ecosOdaForm, aid: e.target.value })} placeholder="A0000000041010" /></label>
+            <label>9F2B (ECC tetik)<input className="mono" maxLength={4} value={ecosOdaForm.p9f2b} onChange={(e) => setEcosOdaForm({ ...ecosOdaForm, p9f2b: e.target.value })} placeholder="0280" title="0280/FFFF = local-auth AFL (cert kayıtları)" /></label>
+            <button className="btn" disabled={ecosOdaBusy || !cardPresent} onClick={runEcosOda}
+              title={!cardPresent ? 'Okuyucuda kart yok' : undefined}>
+              {ecosOdaBusy ? 'Doğrulanıyor…' : 'Temassız ECC ODA Çalıştır'}</button>
+          </div>
+        </div>
+        <EcosOdaResultView r={ecosOdaResult} />
       </section>
     </>
   );

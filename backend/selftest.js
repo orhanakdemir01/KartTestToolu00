@@ -10,7 +10,7 @@
 // master anahtar veya PAN İÇERMEZ (güvenli olarak repo'da saklanabilir).
 import { retailMac, kcv, tdesEcbEncrypt, computeArpc, computeArpcMethod2, deriveIccMasterKey, deriveSessionKey } from './crypto3des.js';
 import { aesCmac, deriveAcSessionKeyAes, ecosArqcAes } from './cryptoaes.js';
-import { ecdsaVerifyP256 } from './odaecc.js';
+import { ecdsaVerifyP256, ecSdsaVerifyP256 } from './odaecc.js';
 
 // Ecos Appendix B AC Input Data (Tablo 21, extended) — çözümlü örnek girdisi.
 const ECOS_AC_INPUT = '00000001000000000000100008400000001080084015112400111111111B800001A080032420000000000000000000';
@@ -93,6 +93,26 @@ const VECTORS = [
   { name: 'Ecos K8 EDA MAC (SKi · AES-CMAC)', kind: 'independent', ref: 'Mastercard Ecos v1.0 Appendix B (Kernel 8 txn)',
     run: () => aesCmac('642373F56192B09B132C7E024164D3A7', '00005C3319D5D8A4B2751D24D5CEE99FD2E1').slice(0, 16),
     expect: 'A4624217FDD8E4B1' },
+
+  // ── ECOS ECC ODA — EC-SDSA (P-256 Schnorr) cert zinciri, Appendix B worked örnekleri ──
+  // Ecos ECC sertifikaları ECDSA değil EC-SDSA kullanır. CA self-signed cert doğrulama
+  // P-256 nokta aritmetiği + EC-SDSA'yı kanıtlar; Card cert Issuer PK ile → zincir.
+  { name: 'EC-SDSA · Ecos CA ECC cert (P-256)', kind: 'independent', ref: 'Mastercard Ecos v1.0 Appendix B (ECC)',
+    run: () => String(ecSdsaVerifyP256(
+      'F60DAECD42B48FCCA547D942204D6098F1A353A5CD25CBDF2EC1ABFD0170E0FC',
+      '6FD75EAAB356BE98BAA8E99A6FCE303F0C952BC02B4F566F096DD6EFF20C8FE8',
+      '2000A000000004E010F60DAECD42B48FCCA547D942204D6098F1A353A5CD25CBDF2EC1ABFD0170E0FC',
+      '7796E8770697859834F7E7B5E792EEB698882292E7F2B918C4BA37C9EC10CB89',
+      '841639789B9221A744805DC4396365216C2219F71A0FFF078033BEAF149C0C6B')),
+    expect: 'true' },
+  { name: 'EC-SDSA · Ecos Card ECC cert (Issuer PK zinciri)', kind: 'independent', ref: 'Mastercard Ecos v1.0 Appendix B (ECC)',
+    run: () => String(ecSdsaVerifyP256(
+      'CD7400578B1164FEA954658C763C5A94FB3514FA89DB5B3B447AE8F4D5DF870A',
+      '4CB6523AFD465E964F77A6DD5B67C79202E9B39892A8E9D45562D1100493D215',
+      '140000202912312359987654321000010260D3FB0E45A5E64834880571152BE93E241D216D407F6F000C263B1CC87517AF43CA1837F6B4321CA70262902037EFCE790DC583828AEA628FFAAEFC08618658',
+      '035824B9DD96765B97A0CC52C1B668B075ED86BE31DA1159C6F9128863B75A80',
+      'BD863084A1C965C681AE72DF3B58A9CA8AEC8463DEF0A7FA35C0EE83A5269F65')),
+    expect: 'true' },
 ];
 
 export function runSelfTest() {

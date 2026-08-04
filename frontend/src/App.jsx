@@ -151,6 +151,12 @@ function App() {
   const [ecosOdaForm, setEcosOdaForm] = useState({ aid: 'A0000000041010', p9f2b: '0280' });
   const [ecosOdaBusy, setEcosOdaBusy] = useState(false);
   const [ecosOdaResult, setEcosOdaResult] = useState(null);
+  const [ecosReadForm, setEcosReadForm] = useState({ aid: 'A0000000041010', p9f2b: '0280' });
+  const [ecosReadBusy, setEcosReadBusy] = useState(false);
+  const [ecosReadResult, setEcosReadResult] = useState(null);
+  const [ecosTxForm, setEcosTxForm] = useState({ keyLabel: '', keyPan: '', arc: '3030', differential: true });
+  const [ecosTxBusy, setEcosTxBusy] = useState(false);
+  const [ecosTxResult, setEcosTxResult] = useState(null);
   const [verifyForm, setVerifyForm] = useState({ pin: '' });
   const [verifyBusy, setVerifyBusy] = useState(false);
   const [verifyResult, setVerifyResult] = useState(null);
@@ -625,6 +631,42 @@ function App() {
       }
     } catch { setEcosOdaResult({ error: 'Backend bağlantısı başarısız' }); }
     setEcosOdaBusy(false);
+  };
+
+  // ECOS kart içeriği — SELECT/GPO/READ RECORD tüm EMV tag'lerini oku (doğrulama yok).
+  const runEcosRead = async () => {
+    setEcosReadBusy(true); setEcosReadResult(null);
+    addTrace({ kind: 'event', msg: '═══ ECOS kart içeriği okunuyor (SELECT · GPO · READ RECORD) ═══' });
+    try {
+      const r = await fetch(`${API}/ecos/read-card`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(withReader({ ...ecosReadForm })),
+      });
+      const d = await r.json();
+      setEcosReadResult(d);
+      if (d.error) addTrace({ kind: 'error', msg: `ECOS oku: ${d.error}` });
+      else addTrace({ kind: 'ok', msg: `ECOS kart içeriği: ${d.tagCount} tag · ${d.records?.length || 0} kayıt · ECC ${d.eccMode ? 'açık' : 'kapalı'}` });
+    } catch { setEcosReadResult({ error: 'Backend bağlantısı başarısız' }); }
+    setEcosReadBusy(false);
+  };
+
+  // ECOS uçtan uca — GENERATE AC (ARQC) → AES doğrula → ARPC → 2. GENAC ile karta ilet.
+  const runEcosTx = async () => {
+    setEcosTxBusy(true); setEcosTxResult(null);
+    if (!ecosTxForm.keyLabel) { setEcosTxResult({ error: 'AES anahtar seti seçin' }); setEcosTxBusy(false); return; }
+    addTrace({ kind: 'event', msg: '═══ ECOS uçtan uca test: ARQC → ARPC → issuer auth ═══' });
+    try {
+      const r = await fetch(`${API}/ecos/full-transaction`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(withReader({ ...ecosTxForm })),
+      });
+      const d = await r.json();
+      setEcosTxResult(d);
+      if (d.error) addTrace({ kind: 'error', msg: `ECOS uçtan uca: ${d.error}` });
+      else addTrace({ kind: d.verdict === 'PASS' ? 'ok' : 'warn',
+        msg: `ECOS uçtan uca ${d.verdict} · ARQC ${d.arqc?.match ? '✓' : '✗'} · issuer-auth ${d.issuerAuth?.verdict || '-'}` });
+    } catch { setEcosTxResult({ error: 'Backend bağlantısı başarısız' }); }
+    setEcosTxBusy(false);
   };
 
   // Verify the card's offline PIN in plaintext (EMV VERIFY 00 20 00 80).
@@ -1336,7 +1378,9 @@ ${apps}
         <EcosTab sessionKeys={sessionKeys} cardPresent={cardPresent}
           ecosForm={ecosForm} setEcosForm={setEcosForm} runEcosVerify={runEcosVerify} ecosBusy={ecosBusy} ecosResult={ecosResult}
           ecosManForm={ecosManForm} setEcosManForm={setEcosManForm} runEcosManual={runEcosManual} ecosManBusy={ecosManBusy} ecosManResult={ecosManResult}
-          ecosOdaForm={ecosOdaForm} setEcosOdaForm={setEcosOdaForm} runEcosOda={runEcosOda} ecosOdaBusy={ecosOdaBusy} ecosOdaResult={ecosOdaResult} />
+          ecosOdaForm={ecosOdaForm} setEcosOdaForm={setEcosOdaForm} runEcosOda={runEcosOda} ecosOdaBusy={ecosOdaBusy} ecosOdaResult={ecosOdaResult}
+          ecosReadForm={ecosReadForm} setEcosReadForm={setEcosReadForm} runEcosRead={runEcosRead} ecosReadBusy={ecosReadBusy} ecosReadResult={ecosReadResult}
+          ecosTxForm={ecosTxForm} setEcosTxForm={setEcosTxForm} runEcosTx={runEcosTx} ecosTxBusy={ecosTxBusy} ecosTxResult={ecosTxResult} />
       )}
 
       {activeTab === 'pin' && (

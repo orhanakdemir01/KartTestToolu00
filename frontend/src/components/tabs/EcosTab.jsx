@@ -1,3 +1,5 @@
+import { TlvTree } from '../TlvTree.jsx';
+
 // "ECOS (Kernel 8)" modülü — Mastercard Ecos AES kartları için ARQC/ARPC doğrulama.
 // Normal (3DES) ARQC ile karışmasın diye ayrı modül. İki mod:
 //  1) Karttan: okuyucudaki karttan GENERATE AC ile gerçek ARQC al ve doğrula.
@@ -83,11 +85,86 @@ function EcosOdaResultView({ r }) {
   );
 }
 
+// Kart içeriği görünümü — SELECT/GPO/READ RECORD fazlarını TLV ağacı olarak göster.
+function EcosReadResultView({ r }) {
+  if (!r) return null;
+  if (r.error) return <p className="err-text" style={{ marginTop: 10, fontWeight: 600 }}>✗ {r.error}</p>;
+  return (
+    <div className="genac" style={{ marginTop: 10 }}>
+      <div className="oda-info">
+        <span className={`oda-chip ${r.eccMode ? '' : 'alt'}`}>{r.eccMode ? '🔓 ECC/BDH modu (kayıtlar çözüldü)' : 'Klasik mod (RSA/temaslı)'}</span>
+        <span className="mono small">{r.tagCount} tag</span>
+        <span className="mono small">{r.records?.length || 0} kayıt</span>
+        {r.gpo?.aip && <span className="mono small">AIP {r.gpo.aip}</span>}
+        {r.gpo?.afl && <span className="mono small">AFL {r.gpo.afl}</span>}
+      </div>
+      <div className="tlv-phase"><h3 className="mono small" style={{ margin: '10px 0 4px' }}>▸ SELECT (FCI)</h3>
+        <TlvTree nodes={r.fci?.nodes} /></div>
+      <div className="tlv-phase"><h3 className="mono small" style={{ margin: '10px 0 4px' }}>▸ GET PROCESSING OPTIONS</h3>
+        <TlvTree nodes={r.gpo?.nodes} /></div>
+      <div className="tlv-phase"><h3 className="mono small" style={{ margin: '10px 0 4px' }}>▸ READ RECORD ({r.records?.length || 0})</h3>
+        {(r.records || []).map((rec, i) => (
+          <details key={i} className="builder" open={i < 2}>
+            <summary>SFI{rec.sfi} · Kayıt {rec.record} {rec.encrypted ? '🔒→🔓 (çözüldü)' : ''}</summary>
+            <TlvTree nodes={rec.nodes} />
+          </details>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Uçtan uca test sonucu — ARQC doğrula → ARPC hesapla → karta ilet (issuer auth).
+function EcosTxResultView({ r }) {
+  if (!r) return null;
+  if (r.error && !r.arqc) return <p className="err-text" style={{ marginTop: 10, fontWeight: 600 }}>✗ {r.error}</p>;
+  const a = r.arqc || {}, p = r.arpc || {}, ia = r.issuerAuth || {};
+  const c = ia.correct || {}, x = ia.corrupt || null;
+  const vClass = (v) => v === 'PASS' ? 'capk-ok' : v === 'FAIL' ? 'err-text' : 'oda-partial';
+  return (
+    <div className="genac" style={{ marginTop: 10 }}>
+      <p className={vClass(r.verdict)} style={{ fontWeight: 600 }}>
+        {r.verdict === 'PASS' ? '✓ UÇTAN UCA DOĞRULANDI (ARQC → ARPC → issuer auth)' : `○ ${r.verdict} — ${r.error || ia.note || ''}`}</p>
+      <div className="oda-info">
+        {r.pan && <span className="oda-chip">{r.pan}</span>}
+        {r.atc && <span className="mono small">ATC {r.atc}</span>}
+        {r.cvn && <span className="oda-chip alt">CVN {r.cvn.raw} · {r.cvn.cipher}</span>}
+      </div>
+      {/* 1) ARQC doğrulama */}
+      <div className="oda-info" style={{ marginTop: 6 }}>
+        <span className={`oda-chip ${a.match ? '' : 'alt'}`}>{a.match ? '✓' : '✗'} ARQC doğrulama</span>
+      </div>
+      <table className="kv-table"><tbody>
+        <tr><td>Kart ARQC</td><td className="mono">{a.cardArqc}</td></tr>
+        <tr><td>Hesaplanan ARQC</td><td className="mono">{a.computed} {a.match ? '✓' : '✗'}</td></tr>
+        {a.skac && <tr><td>SKac</td><td className="mono small muted" style={{ wordBreak: 'break-all' }}>{a.skac}</td></tr>}
+      </tbody></table>
+      {/* 2) ARPC + karta iletim */}
+      {p.value && <>
+        <div className="oda-info" style={{ marginTop: 8 }}>
+          <span className={`oda-chip ${ia.verdict === 'PASS' ? '' : 'alt'}`}>{ia.verdict === 'PASS' ? '✓' : '○'} Issuer Auth (ARPC karta iletildi)</span>
+        </div>
+        <table className="kv-table"><tbody>
+          <tr><td>ARPC</td><td className="mono">{p.value}</td></tr>
+          <tr><td>Issuer Auth Data (91)</td><td className="mono small">{p.issuerAuthData} <span className="muted">(ARC {r.arc})</span></td></tr>
+          <tr><td>Doğru ARPC → kart</td><td className={c.accepted ? 'capk-ok' : ''}>
+            <span className="mono">{c.cidLabel || '—'}</span> · SW {c.sw} {c.accepted ? '✓ kabul (TC)' : ''}</td></tr>
+          {x && <tr><td>Bozuk ARPC → kart</td><td className={x.rejected ? 'capk-ok' : 'err-text'}>
+            <span className="mono">{x.cidLabel || '—'}</span> · SW {x.sw} {x.rejected ? '✓ red' : '✗ reddetmedi'}</td></tr>}
+        </tbody></table>
+        {ia.note && <p className={`small ${vClass(ia.verdict)}`} style={{ marginTop: 4 }}>↳ {ia.note}</p>}
+      </>}
+    </div>
+  );
+}
+
 export function EcosTab({
   sessionKeys, cardPresent,
   ecosForm, setEcosForm, runEcosVerify, ecosBusy, ecosResult,
   ecosManForm, setEcosManForm, runEcosManual, ecosManBusy, ecosManResult,
   ecosOdaForm, setEcosOdaForm, runEcosOda, ecosOdaBusy, ecosOdaResult,
+  ecosReadForm, setEcosReadForm, runEcosRead, ecosReadBusy, ecosReadResult,
+  ecosTxForm, setEcosTxForm, runEcosTx, ecosTxBusy, ecosTxResult,
 }) {
   const aesKeys = sessionKeys.filter((k) => (k.keyType || '3des') !== '3des');
   const keySelect = (form, setForm) => (
@@ -184,6 +261,38 @@ export function EcosTab({
           </div>
         </div>
         <EcosOdaResultView r={ecosOdaResult} />
+      </section>
+
+      <section className="panel">
+        <div className="panel-head"><h2>4 · Kart İçeriği (EMV Tag'leri)</h2></div>
+        <p className="muted small">Kernel 8 kartın veri yapısını <b>oku</b> — doğrulama yok. <span className="mono">SELECT</span> (FCI) → <span className="mono">GPO</span> (AIP/AFL) → <span className="mono">READ RECORD</span>. Temassız ECC modunda <b>gizlilik-korumalı (DA) kayıtlar</b> BDH oturum anahtarıyla otomatik çözülür; temaslı/RSA kartta kayıtlar düz okunur. Her tag adı + decode ile ağaç halinde gösterilir.</p>
+        <div className="capk-add">
+          <div className="capk-add-row">
+            <label>AID<input className="mono" value={ecosReadForm.aid} onChange={(e) => setEcosReadForm({ ...ecosReadForm, aid: e.target.value })} placeholder="A0000000041010" /></label>
+            <label>9F2B (ECC tetik)<input className="mono" maxLength={4} value={ecosReadForm.p9f2b} onChange={(e) => setEcosReadForm({ ...ecosReadForm, p9f2b: e.target.value })} placeholder="0280" title="Temassız ECC modu için; temaslıda yok sayılır" /></label>
+            <button className="btn" disabled={ecosReadBusy || !cardPresent} onClick={runEcosRead}
+              title={!cardPresent ? 'Okuyucuda kart yok' : undefined}>
+              {ecosReadBusy ? 'Okunuyor…' : 'Kart İçeriğini Oku'}</button>
+          </div>
+        </div>
+        <EcosReadResultView r={ecosReadResult} />
+
+        <div className="tlv-phase" style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+          <h3 style={{ margin: '0 0 4px' }}>Uçtan Uca İşlem Testi (ARQC → ARPC → Issuer Auth)</h3>
+          <p className="muted small">Kartı tam işlem döngüsünde test eder: <span className="mono">GENERATE AC</span> ile ARQC alır, seçili AES anahtarıyla <b>doğrular</b>, <b>ARPC hesaplar</b> ve <span className="mono">2. GENERATE AC</span> (tag 91) ile <b>karta iletir</b>. Diferansiyel modda doğru ARPC (TC bekle) + bozuk ARPC (red bekle) göndererek kartın issuer authentication'ı <b>kriptografik doğruladığını</b> kanıtlar.</p>
+          {aesKeys.length === 0 && <p className="err-text small">⚠ AES anahtar seti yok — <b>Oturum Anahtarları</b>'ndan ekleyin.</p>}
+          <div className="capk-add">
+            <div className="capk-add-row">
+              {keySelect(ecosTxForm, setEcosTxForm)}
+              <label>ARC (ARPC-RC)<input className="mono" maxLength={4} value={ecosTxForm.arc} onChange={(e) => setEcosTxForm({ ...ecosTxForm, arc: e.target.value })} placeholder="3030" /></label>
+              <label className="capk-check"><input type="checkbox" checked={ecosTxForm.differential !== false} onChange={(e) => setEcosTxForm({ ...ecosTxForm, differential: e.target.checked })} /> Diferansiyel (bozuk ARPC reddi)</label>
+              <button className="btn" disabled={ecosTxBusy || !cardPresent || !ecosTxForm.keyLabel} onClick={runEcosTx}
+                title={!cardPresent ? 'Okuyucuda kart yok' : !ecosTxForm.keyLabel ? 'AES anahtar seç' : undefined}>
+                {ecosTxBusy ? 'Test ediliyor…' : 'Uçtan Uca Test Et'}</button>
+            </div>
+          </div>
+          <EcosTxResultView r={ecosTxResult} />
+        </div>
       </section>
     </>
   );

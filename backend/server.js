@@ -14,9 +14,9 @@ import { BUILTIN_SUITES, swMatch } from './testsuites.js';
 import { listKeys, keysForRid, findKey, schemes, verifyKey, addKey, updateKey, deleteKey } from './capk.js';
 import { computeArpc, computeArpcMethod2, deriveIccMasterKey, verifyArqcAuto } from './crypto3des.js';
 import { listKeysMasked, addKeySet, updateKeySet, deleteKeySet, getKeySet, findExact } from './sessionkeys.js';
-import { deriveAcSessionKeyAes, deriveIccMasterKeyAes, buildEcosAcInput, ecosArqcAes, ecosArpcAes, parseEcosIad, bdhKdk, bdhSessionKeys, bdhDecrypt } from './cryptoaes.js';
+import { deriveAcSessionKeyAes, deriveIccMasterKeyAes, buildEcosAcInput, ecosArqcAes, ecosArpcAes, parseEcosIad, verifyEcosArqcAes, bdhKdk, bdhSessionKeys, bdhDecrypt } from './cryptoaes.js';
 import { genEphemeralP256, ecdhSharedX, verifyEccCert, ecSdsaVerifyP256, decompressP256 } from './odaecc.js';
-import { findAllTags, parseAfl } from './emv.js';
+import { findAllTags, parseAfl, parseTlv } from './emv.js';
 import { buildPinChange, buildUnblockVariants, buildVerifyPlaintext } from './changepin.js';
 import { discoverCardContext } from './carddiscover.js';
 import { extractCardImage } from './cardimage.js';
@@ -301,6 +301,90 @@ app.post('/api/ecos/verify-arqc', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// POST /api/ecos/full-transaction — ECOS AES kartı UÇTAN UCA test:
+// SELECT→GPO→READ→GENERATE AC (ARQC) → AES ARQC doğrula → ARPC hesapla →
+// 2. GENERATE AC (tag 91 issuer auth) ile ARPC'yi KARTA ilet → kart kabul (TC) /
+// red (AAC) kararını raporla. Diferansiyel: doğru ARPC (TC bekle) + bozuk ARPC
+// (AAC bekle) → kartın issuer authentication'ı KRİPTOGRAFİK doğruladığını kanıtlar.
+app.post('/api/ecos/full-transaction', async (req, res) => {
+  const preferReader = req.body?.reader || undefined;
+  if (!usingRealReader() || !pcsc.getActiveCard(preferReader)?.connected) {
+    return res.status(404).json({ error: 'Okuyucuda kart yok' });
+  }
+  const { keyLabel, keyPan } = req.body || {};
+  const arc = (clean0(req.body?.arc) || '3030').slice(0, 4);
+  const differential = req.body?.differential !== false;
+  const flip1 = (h) => ((parseInt(h.slice(0, 2), 16) ^ 0xFF).toString(16).padStart(2, '0') + h.slice(2)).toUpperCase();
+  const cidLabel = (t) => t === 0x40 ? 'TC' : t === 0x00 ? 'AAC' : t === 0x80 ? 'ARQC' : '?';
+  try {
+    const k = keyLabel ? findExact(keyLabel, keyPan || '') : null;
+    if (!k) return res.json({ error: 'AES anahtar seti seçin (Oturum Anahtarları · Tip AES)' });
+    if ((k.keyType || '3des') === '3des') return res.json({ error: 'Seçilen anahtar 3DES — ECOS için AES gerekli' });
+
+    const steps = [];
+    const run = async (name, cmd) => { const { response, sw } = await transmitChain(clean0(cmd), preferReader); steps.push({ name, command: clean0(cmd), response, sw, swText: describeSw(sw), ok: sw === '9000' }); return { response: clean0(response), sw }; };
+
+    // 1) Kart bağlamı: SELECT→GPO→READ→GENERATE AC (1. ARQC)
+    const ctx = await discoverCardContext(preferReader);
+    if (ctx.error) return res.json({ error: ctx.error, steps: ctx.steps });
+    if (!ctx.arqc || !ctx.atc) return res.json({ error: 'Karttan ARQC/ATC alınamadı (GENERATE AC başarısız)', steps: ctx.steps });
+    steps.push(...(ctx.steps || []));
+
+    // 2) AES ARQC doğrula → kartın kullandığı SKac'ı bul
+    const td = terminalDefaults();
+    const iadP = parseEcosIad(ctx.iad || '');
+    const cvn = iadP?.cvnDecoded || null;
+    const cvr = iadP?.cvr || '';
+    const ext = (cvn?.extendedInput && iadP?.iadExt) ? iadP.iadExt : '';
+    const terminal = { amountAuth: td['9F02'], amountOther: td['9F03'], termCountry: td['9F1A'], tvr: td['95'], txnCurrency: td['5F2A'], txnDate: td['9A'], txnType: td['9C'], un: td['9F37'] };
+    const vr = verifyEcosArqcAes({ key: k, atc: ctx.atc, pan: ctx.pan, psn: ctx.psn, aip: ctx.aip, cvr, iadExt: ext, terminal, cardArqc: ctx.arqc });
+    const arqcOut = { cardArqc: ctx.arqc, computed: vr.computed, match: vr.match, usedMaskedCvr: vr.usedMaskedCvr, verdict: vr.match ? 'PASS' : 'FAIL', acInput: vr.acInput, skac: vr.skac, mkac: vr.mkac };
+    const out = { pan: ctx.pan, aid: ctx.aid, atc: ctx.atc, aip: ctx.aip, iad: ctx.iad, cvn, cvr, arc, arqc: arqcOut };
+    if (!vr.match) { out.error = 'ARQC eşleşmedi — issuer auth için doğru SKac gerekir (anahtar/PAN kontrol edin)'; out.steps = steps; return res.json(out); }
+
+    // 3) ARPC (AES CSK) = AES-CMAC(SKac)[ARQC‖ARPC-RC‖00×6]; tag 91 = ARPC(8)‖ARPC-RC(2)
+    const arpc = ecosArpcAes(vr.skac, ctx.arqc, arc);
+    const issuerAuthData = arpc + arc;
+    out.arpc = { value: arpc, arpcRc: arc, issuerAuthData };
+
+    // 4) 2. GENERATE AC (P1=40 TC) ile ARPC'yi karta ilet. Diferansiyel: doğru + bozuk.
+    const send2 = async (iad91, label) => {
+      const defs = { ...terminalDefaults(), '91': iad91, '8A': arc };
+      const cdol2Data = ctx.cdol2 ? buildDol(parseDol(ctx.cdol2), defs) : (iad91 + arc);
+      const g2 = await run(`GENERATE AC 2 (issuer auth${label})`, `80AE4000${(cdol2Data.length / 2).toString(16).padStart(2, '0').toUpperCase()}${cdol2Data}00`);
+      const n2 = tlvFromResponse(g2.response).nodes;
+      const t80 = findTag(n2, '80');
+      const cid = t80 ? clean0(t80.value).slice(0, 2) : clean0(findTag(n2, '9F27')?.value);
+      const acType = cid ? (parseInt(cid, 16) & 0xC0) : null;
+      return { cid, acType, cidLabel: cidLabel(acType), sw: g2.sw, swText: describeSw(g2.sw), sentIssuerAuthData: iad91 };
+    };
+    const correct = await send2(issuerAuthData, '');
+    correct.accepted = correct.acType === 0x40;
+    const ia = { method: 'Method AES — 2. GENERATE AC · tag 91 (ARPC‖ARPC-RC)', correct };
+
+    if (differential) {
+      const corrupt = await send2(flip1(issuerAuthData), ' · BOZUK ARPC');
+      // Bozuk ARPC "reddedildi" = TC almadı: ya AAC (0x00) ya da hata SW (6985/6300/
+      // 6983… — kart bozuk issuer-auth'u SW ile reddedebilir, AAC döndürmek zorunda değil).
+      const corruptRejected = corrupt.acType === 0x00 || (corrupt.sw !== '9000' && corrupt.acType !== 0x40);
+      corrupt.rejected = corruptRejected;
+      ia.corrupt = corrupt;
+      const rejWord = corrupt.acType === 0x00 ? 'AAC' : `SW ${corrupt.sw}`;
+      if (correct.accepted && corruptRejected) { ia.verdict = 'PASS'; ia.note = `Diferansiyel ✓ — doğru ARPC kabul (TC), bozuk ARPC red (${rejWord}): kart issuer authentication'ı KRİPTOGRAFİK doğruluyor.`; }
+      else if (correct.accepted && corrupt.acType === 0x40) { ia.verdict = 'NA'; ia.note = 'Kart bozuk ARPC\'ye de TC döndü → ARPC değeri kararı etkilemiyor (issuer auth uygulanmıyor); ARQC/SKac doğrulandı, kripto sorunu yok.'; }
+      else if (!correct.accepted && correct.acType === corrupt.acType && correct.sw === corrupt.sw) { ia.verdict = 'NA'; ia.note = `Kart doğru ve bozuk ARPC'ye AYNI yanıtı (${correct.cidLabel || correct.sw}) verdi → bu profilde offline TC/issuer-auth gözlenemez. ARQC/SKac DOĞRULANDI — kripto sorunu yok, kart kusuru değil.`; }
+      else { ia.verdict = 'WARN'; ia.note = `Doğru ARPC → ${correct.cidLabel || correct.sw}, bozuk ARPC → ${corrupt.cidLabel || corrupt.sw}: beklenmedik, issuer-auth kesin doğrulanamadı.`; }
+    } else {
+      ia.verdict = correct.accepted ? 'PASS' : 'WARN';
+      ia.note = correct.accepted ? 'Kart TC döndü — kesin kanıt için diferansiyel testi açın (bozuk ARPC reddi).' : `Kart ${correct.cidLabel} döndü.`;
+    }
+    out.issuerAuth = ia;
+    out.verdict = arqcOut.verdict === 'PASS' && (ia.verdict === 'PASS' || ia.verdict === 'NA') ? 'PASS' : (ia.verdict === 'WARN' ? 'WARN' : arqcOut.verdict);
+    out.steps = steps;
+    res.json(out);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // POST /api/ecos/compute-arqc — ELLE ECOS ARQC hesapla (kart YOK). Terminalden
 // yakalanan işlemi doğrulamak için: ya hazır acInput ver, ya da alanları ver
 // (bunları Ecos Tablo 20/21 sırasına göre birleştiririz). ATC + AES anahtar zorunlu.
@@ -436,6 +520,84 @@ app.post('/api/ecos/contactless-oda', async (req, res) => {
     chain.ok = !!(chain.ca && chain.issuer && chain.card);
     out.chain = chain;
     out.verdict = chain.ok ? 'PASS' : 'PARTIAL';
+    res.json(out);
+  } catch (err) { res.status(500).json({ error: err.message, steps }); }
+});
+
+// POST /api/ecos/read-card — temassız Kernel 8 kartın EMV veri yapısını OKU (doğrulama yok).
+// SELECT (FCI) → GPO (ECC efemer) → READ RECORD; ECC/BDH modunda gizlilik-korumalı
+// (DA-tag) kayıtları AES-CTR ile çözer. Her fazın TLV ağacını (tag adları + decode) döner.
+app.post('/api/ecos/read-card', async (req, res) => {
+  const preferReader = req.body?.reader || undefined;
+  if (!usingRealReader() || !pcsc.getActiveCard(preferReader)?.connected) {
+    return res.status(404).json({ error: 'Okuyucuda kart yok' });
+  }
+  const steps = [];
+  const tx = async (name, cmd) => {
+    const { response, sw } = await transmitChain(clean0(cmd), preferReader);
+    const tlv = tlvFromResponse(response);
+    steps.push({ name, command: clean0(cmd), response, sw, swText: describeSw(sw), ok: sw === '9000', tlv });
+    return { response: clean0(response), sw, tlv };
+  };
+  try {
+    const aid = clean0(req.body?.aid) || 'A0000000041010';
+    // 1) SELECT AID → FCI
+    const sel = await tx('SELECT AID', `00A40400${(aid.length / 2).toString(16).padStart(2, '0')}${aid}00`);
+    const fci = { command: sel.response ? undefined : undefined, sw: sel.sw, nodes: sel.tlv.nodes };
+    // 2) GPO — ECC efemer (9F2B tetik + QT). Kart ECC modu tetiklenmezse klasik yanıt gelir.
+    const eph = genEphemeralP256();
+    const p9f2b = (clean0(req.body?.p9f2b) || '0280').padStart(4, '0').slice(-4);
+    const pdolData = p9f2b + eph.qx + eph.qy;
+    const gpoData = '83' + (pdolData.length / 2).toString(16).padStart(2, '0') + pdolData;
+    const g = await tx('GET PROCESSING OPTIONS', `80A80000${(gpoData.length / 2).toString(16).padStart(2, '0')}${gpoData}00`);
+    const gnodes = g.tlv.nodes;
+    // Format 2 (77): AIP=82, AFL=94. Format 1 (80): 80 = AIP(2B)‖AFL(rest).
+    let aip = clean0(findTag(gnodes, '82')?.value);
+    let afl = clean0(findTag(gnodes, '94')?.value);
+    const fmt1 = clean0(findTag(gnodes, '80')?.value);
+    if (!aip && fmt1.length >= 4) { aip = fmt1.slice(0, 4); afl = fmt1.slice(4); }
+    const ckd = clean0(findTag(gnodes, '9F8103')?.value);
+    const eccMode = !!(ckd && ckd.length >= 128);
+    const out = { aid, eccMode, fci: { sw: fci.sw, nodes: fci.nodes }, gpo: { sw: g.sw, nodes: gnodes, aip, afl }, records: [] };
+    // 3) BDH oturum anahtarları (ECC modda) → kayıt decrypt için
+    let skc = null;
+    if (eccMode) {
+      const blindedX = ckd.slice(0, 64), Er = ckd.slice(64, 128);
+      const z = ecdhSharedX(eph.dT, blindedX);
+      const kdk = bdhKdk(z);
+      ({ skc } = bdhSessionKeys(kdk));
+      out.bdh = { z, kdk, skc };
+    }
+    // 4) READ RECORD — AFL'den SFI/rec listesi (yoksa SFI1-4 rec1-8 tara)
+    let plan = [];
+    for (const e of parseAfl(afl)) {
+      for (let r = e.firstRecord; r <= e.lastRecord && r > 0; r++) plan.push({ sfi: e.sfi, record: r });
+    }
+    if (plan.length === 0) {
+      for (let sfi = 1; sfi <= 4; sfi++) for (let r = 1; r <= 8; r++) plan.push({ sfi, record: r });
+    }
+    let counter = 1;
+    for (const { sfi, record } of plan) {
+      const p2 = (((sfi << 3) | 4) & 0xff).toString(16).padStart(2, '0').toUpperCase();
+      const rec = await tx(`READ RECORD SFI${sfi} #${record}`, `00B2${record.toString(16).padStart(2, '0').toUpperCase()}${p2}00`);
+      if (rec.sw !== '9000') { steps.pop(); continue; }
+      const enc = clean0(findTag(rec.tlv.nodes, 'DA')?.value);
+      let nodes = rec.tlv.nodes, encrypted = null, decrypted = null;
+      if (enc && skc) {
+        // Gizlilik-korumalı kayıt: AES-CTR çöz (sayaç yalnız şifreli kayıtta artar).
+        encrypted = enc;
+        decrypted = bdhDecrypt(skc, counter, enc); counter++;
+        nodes = parseTlv(decrypted).nodes;
+      }
+      out.records.push({ sfi, record, encrypted, decrypted, nodes });
+    }
+    // 5) Tüm tag'lerin düz listesi (arama/özet için)
+    const flat = [];
+    const walk = (ns) => { for (const n of ns || []) { flat.push({ tag: n.tag, name: n.name || null, length: n.length, value: n.constructed ? null : n.value }); if (n.children) walk(n.children); } };
+    walk(fci.nodes); walk(gnodes); for (const r of out.records) walk(r.nodes);
+    out.tagCount = flat.length;
+    out.flatTags = flat;
+    out.steps = steps;
     res.json(out);
   } catch (err) { res.status(500).json({ error: err.message, steps }); }
 });

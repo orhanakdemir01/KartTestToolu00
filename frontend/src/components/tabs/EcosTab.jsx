@@ -86,18 +86,51 @@ function EcosOdaResultView({ r }) {
 }
 
 // Kart içeriği görünümü — SELECT/GPO/READ RECORD fazlarını TLV ağacı olarak göster.
+// Ecos çift kernel: hangi kernel yolunun çalıştığı + perso profiliyle karşılaştırma.
+const KERNEL_LABEL = { contact: 'Temaslı', k2: 'Temassız · Kernel 2', k8: 'Temassız · Kernel 8' };
 function EcosReadResultView({ r }) {
   if (!r) return null;
   if (r.error) return <p className="err-text" style={{ marginTop: 10, fontWeight: 600 }}>✗ {r.error}</p>;
+  const prof = r.profile;
   return (
     <div className="genac" style={{ marginTop: 10 }}>
       <div className="oda-info">
-        <span className={`oda-chip ${r.eccMode ? '' : 'alt'}`}>{r.eccMode ? '🔓 ECC/BDH modu (kayıtlar çözüldü)' : 'Klasik mod (RSA/temaslı)'}</span>
+        <span className="oda-chip">{KERNEL_LABEL[r.kernelUsed] || r.kernelUsed}</span>
+        {r.eccMode && <span className="oda-chip alt">🔓 ECC/BDH — kayıtlar çözüldü</span>}
         <span className="mono small">{r.tagCount} tag</span>
         <span className="mono small">{r.records?.length || 0} kayıt</span>
-        {r.gpo?.aip && <span className="mono small">AIP {r.gpo.aip}</span>}
+        {r.gpo?.aip && <span className={`mono small ${r.aipCheck && !r.aipCheck.match ? 'err-text' : ''}`}>AIP {r.gpo.aip}</span>}
         {r.gpo?.afl && <span className="mono small">AFL {r.gpo.afl}</span>}
       </div>
+      {/* Kartın PPSE'de yayınladığı kernel'ler — hangi POS tipleriyle çalışabileceği */}
+      {r.ppse?.entries?.length > 0 && (
+        <div className="oda-info" style={{ marginTop: 6 }}>
+          <span className="muted small">PPSE kernel girişleri:</span>
+          {r.ppse.entries.map((e, i) => (
+            <span key={i} className="oda-chip alt">Kernel {e.kernelId === '08' ? '8' : e.kernelId === '02' ? '2' : (e.kernelId || '?')}
+              {e.priority ? ` · öncelik ${e.priority}` : ''}</span>
+          ))}
+        </div>
+      )}
+      {/* Perso profili karşılaştırması — bu kernel için beklenen alanlar */}
+      {prof && (
+        <details className="builder" style={{ marginTop: 8 }} open={prof.counts.differs > 0 || prof.counts.missing > 0}>
+          <summary>Perso profili karşılaştırma — {prof.section} · {prof.counts.match}✓ {prof.counts.differs}≠ {prof.counts.missing}—</summary>
+          <table className="kv-table"><tbody>
+            {prof.rows.map((row, i) => (
+              <tr key={i}>
+                <td><span className="mono">{row.tag}</span> <span className="small muted">{row.name}</span></td>
+                <td className="mono small">
+                  {row.status === 'match' && <span className="capk-ok">✓ {row.actual}</span>}
+                  {row.status === 'differs' && <span className="err-text">≠ kart {row.actual}<br /><span className="muted">profil {row.expected}</span></span>}
+                  {row.status === 'missing' && <span className="oda-partial">— okunamadı (profil {row.expected})</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody></table>
+          <p className="muted small" style={{ marginTop: 6 }}>Profil bir <b>referans şablondur</b>; fark mutlaka hata değildir — issuer perso'suna göre değişebilir (ör. CA anahtar indeksi, CVM listesi).</p>
+        </details>
+      )}
       <div className="tlv-phase"><h3 className="mono small" style={{ margin: '10px 0 4px' }}>▸ SELECT (FCI)</h3>
         <TlvTree nodes={r.fci?.nodes} /></div>
       <div className="tlv-phase"><h3 className="mono small" style={{ margin: '10px 0 4px' }}>▸ GET PROCESSING OPTIONS</h3>
@@ -265,11 +298,18 @@ export function EcosTab({
 
       <section className="panel">
         <div className="panel-head"><h2>4 · Kart İçeriği (EMV Tag'leri)</h2></div>
-        <p className="muted small">Kernel 8 kartın veri yapısını <b>oku</b> — doğrulama yok. <span className="mono">SELECT</span> (FCI) → <span className="mono">GPO</span> (AIP/AFL) → <span className="mono">READ RECORD</span>. Temassız ECC modunda <b>gizlilik-korumalı (DA) kayıtlar</b> BDH oturum anahtarıyla otomatik çözülür; temaslı/RSA kartta kayıtlar düz okunur. Her tag adı + decode ile ağaç halinde gösterilir.</p>
+        <p className="muted small">Ecos <b>çift kernel</b>dir: temassızda hem <b>Kernel 2</b> (mevcut PayPass POS'ları) hem <b>Kernel 8</b> (yeni ECC/AES POS'ları) desteklenir ve kart <b>her kernel için farklı kayıt seti</b> döndürür. Terminalin hangi kernel'i kullandığı GPO'da <span className="mono">9F2B</span> ile bildirilir (perso PDOL: <span className="mono">9F2B02‖9E40</span>). Aşağıdan hangi POS tipini <b>taklit edeceğini</b> seç — okunan alanlar perso profiliyle karşılaştırılır.</p>
         <div className="capk-add">
           <div className="capk-add-row">
+            <label>Terminal / kernel
+              <select value={ecosReadForm.mode} onChange={(e) => setEcosReadForm({ ...ecosReadForm, mode: e.target.value })}>
+                <option value="auto">Otomatik (Kernel 8 dene)</option>
+                <option value="k2">Temassız · Kernel 2 — mevcut POS</option>
+                <option value="k8">Temassız · Kernel 8 — yeni POS</option>
+                <option value="contact">Temaslı</option>
+              </select>
+            </label>
             <label>AID<input className="mono" value={ecosReadForm.aid} onChange={(e) => setEcosReadForm({ ...ecosReadForm, aid: e.target.value })} placeholder="A0000000041010" /></label>
-            <label>9F2B (ECC tetik)<input className="mono" maxLength={4} value={ecosReadForm.p9f2b} onChange={(e) => setEcosReadForm({ ...ecosReadForm, p9f2b: e.target.value })} placeholder="0280" title="Temassız ECC modu için; temaslıda yok sayılır" /></label>
             <button className="btn" disabled={ecosReadBusy || !cardPresent} onClick={runEcosRead}
               title={!cardPresent ? 'Okuyucuda kart yok' : undefined}>
               {ecosReadBusy ? 'Okunuyor…' : 'Kart İçeriğini Oku'}</button>

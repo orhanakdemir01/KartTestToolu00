@@ -170,7 +170,7 @@ function App() {
   const [ecosOdaForm, setEcosOdaForm] = useState({ aid: 'A0000000041010', p9f2b: '0280' });
   const [ecosOdaBusy, setEcosOdaBusy] = useState(false);
   const [ecosOdaResult, setEcosOdaResult] = useState(null);
-  const [ecosReadForm, setEcosReadForm] = useState({ aid: 'A0000000041010', p9f2b: '0280' });
+  const [ecosReadForm, setEcosReadForm] = useState({ aid: 'A0000000041010', mode: 'auto' });
   const [ecosReadBusy, setEcosReadBusy] = useState(false);
   const [ecosReadResult, setEcosReadResult] = useState(null);
   const [ecosTxForm, setEcosTxForm] = useState({ keyLabel: '', keyPan: '', arc: '3030', differential: true });
@@ -648,7 +648,7 @@ function App() {
       const d = await apiPost('/ecos/read-card', withReader({ ...ecosReadForm }));
       setEcosReadResult(d);
       if (d.error) addTrace({ kind: 'error', msg: `ECOS oku: ${d.error}` });
-      else addTrace({ kind: 'ok', msg: `ECOS kart içeriği: ${d.tagCount} tag · ${d.records?.length || 0} kayıt · ECC ${d.eccMode ? 'açık' : 'kapalı'}` });
+      else addTrace({ kind: 'ok', msg: `ECOS kart içeriği (${d.kernelUsed}): ${d.tagCount} tag · ${d.records?.length || 0} kayıt${d.profile ? ` · profil ${d.profile.counts.match}✓/${d.profile.counts.differs}≠/${d.profile.counts.missing}—` : ''}` });
     } catch (e) { setEcosReadResult({ error: e.message }); addTrace({ kind: 'error', msg: `ECOS oku: ${e.message}` }); }
     setEcosReadBusy(false);
   };

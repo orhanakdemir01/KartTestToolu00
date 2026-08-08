@@ -17,6 +17,7 @@ import { listKeysMasked, addKeySet, updateKeySet, deleteKeySet, getKeySet, findE
 import { deriveAcSessionKeyAes, deriveIccMasterKeyAes, buildEcosAcInput, ecosArqcAes, ecosArpcAes, parseEcosIad, verifyEcosArqcAes, bdhKdk, bdhSessionKeys, bdhDecrypt } from './cryptoaes.js';
 import { genEphemeralP256, ecdhSharedX, verifyEccCert, ecSdsaVerifyP256, decompressP256 } from './odaecc.js';
 import { findAllTags, parseAfl, parseTlv } from './emv.js';
+import { compareWithProfile, expectedAip, ECOS_PROFILE } from './ecosprofile.js';
 import { buildPinChange, buildUnblockVariants, buildVerifyPlaintext } from './changepin.js';
 import { discoverCardContext } from './carddiscover.js';
 import { extractCardImage } from './cardimage.js';
@@ -524,9 +525,17 @@ app.post('/api/ecos/contactless-oda', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message, steps }); }
 });
 
-// POST /api/ecos/read-card — temassız Kernel 8 kartın EMV veri yapısını OKU (doğrulama yok).
-// SELECT (FCI) → GPO (ECC efemer) → READ RECORD; ECC/BDH modunda gizlilik-korumalı
-// (DA-tag) kayıtları AES-CTR ile çözer. Her fazın TLV ağacını (tag adları + decode) döner.
+// POST /api/ecos/read-card — Ecos kartın EMV veri yapısını KERNEL-FARKINDA oku.
+//
+// Ecos çift kernel'dir: temassızda hem Kernel 2 (mevcut PayPass POS'ları) hem
+// Kernel 8 (yeni ECC/AES POS'ları) desteklenir ve kart HER KERNEL İÇİN FARKLI
+// kayıt seti döndürür. Terminal hangi kernel'i kullandığını GPO'daki PDOL
+// verisinde 9F2B ile bildirir (perso profili: PDOL = 9F2B02‖9E40):
+//   mode 'k2'      → 9F2B = 0000 : Kernel 2 yolu (klasik RSA, kayıtlar düz)
+//   mode 'k8'      → 9F2B = 0280 : Kernel 8 yolu (ECC/BDH, kayıtlar DA-şifreli)
+//   mode 'contact' → temaslı arayüz (PPSE yok, doğrudan SELECT AID)
+//   mode 'auto'    → Kernel 8 dener; kart ECC vermezse klasik yanıtı raporlar
+// PPSE (2PAY) okunarak kartın yayınladığı kernel girişleri (9F2A) de listelenir.
 app.post('/api/ecos/read-card', async (req, res) => {
   const preferReader = req.body?.reader || undefined;
   if (!usingRealReader() || !pcsc.getActiveCard(preferReader)?.connected) {
@@ -541,15 +550,46 @@ app.post('/api/ecos/read-card', async (req, res) => {
   };
   try {
     const aid = clean0(req.body?.aid) || 'A0000000041010';
-    // 1) SELECT AID → FCI
+    const mode = ['contact', 'k2', 'k8', 'auto'].includes(req.body?.mode) ? req.body.mode : 'auto';
+    const contactless = mode !== 'contact';
+    const out = { aid, mode, records: [] };
+
+    // 1) PPSE (2PAY) — kartın yayınladığı kernel girişlerini keşfet (yalnız temassız).
+    if (contactless) {
+      const ppseAid = '325041592E5359532E4444463031'; // "2PAY.SYS.DDF01"
+      const p = await tx('SELECT PPSE (2PAY)', `00A404000E${ppseAid}00`);
+      if (p.sw === '9000') {
+        // Her dizin girişi (61) bir AID + öncelik (87) + Kernel Identifier (9F2A) taşır.
+        const entries = findAllTags(p.tlv.nodes, '61').map((n) => ({
+          aid: clean0(findTag(n.children, '4F')?.value) || null,
+          priority: clean0(findTag(n.children, '87')?.value) || null,
+          kernelId: clean0(findTag(n.children, '9F2A')?.value) || null,
+        }));
+        out.ppse = {
+          sw: p.sw, nodes: p.tlv.nodes, entries,
+          kernels: entries.map((e) => e.kernelId).filter(Boolean),
+        };
+      } else { steps.pop(); }
+    }
+
+    // 2) SELECT AID → FCI (PDOL burada gelir)
     const sel = await tx('SELECT AID', `00A40400${(aid.length / 2).toString(16).padStart(2, '0')}${aid}00`);
-    const fci = { command: sel.response ? undefined : undefined, sw: sel.sw, nodes: sel.tlv.nodes };
-    // 2) GPO — ECC efemer (9F2B tetik + QT). Kart ECC modu tetiklenmezse klasik yanıt gelir.
+    const fciNodes = sel.tlv.nodes;
+    out.fci = { sw: sel.sw, nodes: fciNodes };
+
+    // 3) GPO — PDOL'ü kartın istediği sıraya göre doldur. Kernel seçimi 9F2B ile.
+    //    Kernel 8 için 9E = efemer terminal public key (QT.x‖QT.y); Kernel 2
+    //    terminalinde ECC anahtarı yoktur → sıfır gönderilir.
     const eph = genEphemeralP256();
-    const p9f2b = (clean0(req.body?.p9f2b) || '0280').padStart(4, '0').slice(-4);
-    const pdolData = p9f2b + eph.qx + eph.qy;
-    const gpoData = '83' + (pdolData.length / 2).toString(16).padStart(2, '0') + pdolData;
-    const g = await tx('GET PROCESSING OPTIONS', `80A80000${(gpoData.length / 2).toString(16).padStart(2, '0')}${gpoData}00`);
+    const p9f2b = clean0(req.body?.p9f2b) || (mode === 'k2' ? '0000' : '0280');
+    const use9e = mode === 'k2' ? '00'.repeat(64) : eph.qx + eph.qy;
+    const pdolHex = clean0(findTag(fciNodes, '9F38')?.value);
+    const pdolData = pdolHex
+      ? buildDol(parseDol(pdolHex), { ...terminalDefaults(), '9F2B': p9f2b, '9E': use9e })
+      : (contactless ? p9f2b + use9e : '');
+    const gpoData = '83' + (pdolData.length / 2).toString(16).padStart(2, '0').toUpperCase() + pdolData;
+    const g = await tx(`GET PROCESSING OPTIONS (${mode === 'k2' ? 'Kernel 2' : mode === 'contact' ? 'temaslı' : 'Kernel 8'})`,
+      `80A80000${(gpoData.length / 2).toString(16).padStart(2, '0').toUpperCase()}${gpoData}00`);
     const gnodes = g.tlv.nodes;
     // Format 2 (77): AIP=82, AFL=94. Format 1 (80): 80 = AIP(2B)‖AFL(rest).
     let aip = clean0(findTag(gnodes, '82')?.value);
@@ -558,18 +598,24 @@ app.post('/api/ecos/read-card', async (req, res) => {
     if (!aip && fmt1.length >= 4) { aip = fmt1.slice(0, 4); afl = fmt1.slice(4); }
     const ckd = clean0(findTag(gnodes, '9F8103')?.value);
     const eccMode = !!(ckd && ckd.length >= 128);
-    const out = { aid, eccMode, fci: { sw: fci.sw, nodes: fci.nodes }, gpo: { sw: g.sw, nodes: gnodes, aip, afl }, records: [] };
-    // 3) BDH oturum anahtarları (ECC modda) → kayıt decrypt için
+    out.eccMode = eccMode;
+    out.pdol = { requested: pdolHex || null, sent: pdolData, p9f2b };
+    out.gpo = { sw: g.sw, nodes: gnodes, aip, afl };
+    // Fiilen hangi kernel yolunun çalıştığı — istenen mod değil, KARTIN yanıtı.
+    out.kernelUsed = mode === 'contact' ? 'contact' : (eccMode ? 'k8' : 'k2');
+
+    // 4) BDH oturum anahtarları (yalnız ECC/Kernel 8) → kayıt decrypt için
     let skc = null;
     if (eccMode) {
       const blindedX = ckd.slice(0, 64), Er = ckd.slice(64, 128);
       const z = ecdhSharedX(eph.dT, blindedX);
       const kdk = bdhKdk(z);
       ({ skc } = bdhSessionKeys(kdk));
-      out.bdh = { z, kdk, skc };
+      out.bdh = { z, kdk, skc, encryptedBlindingFactor: Er };
     }
-    // 4) READ RECORD — AFL'den SFI/rec listesi (yoksa SFI1-4 rec1-8 tara)
-    let plan = [];
+
+    // 5) READ RECORD — AFL'den SFI/rec listesi (yoksa SFI1-4 rec1-8 tara)
+    const plan = [];
     for (const e of parseAfl(afl)) {
       for (let r = e.firstRecord; r <= e.lastRecord && r > 0; r++) plan.push({ sfi: e.sfi, record: r });
     }
@@ -587,16 +633,20 @@ app.post('/api/ecos/read-card', async (req, res) => {
         // Gizlilik-korumalı kayıt: AES-CTR çöz (sayaç yalnız şifreli kayıtta artar).
         encrypted = enc;
         decrypted = bdhDecrypt(skc, counter, enc); counter++;
-        nodes = parseTlv(decrypted).nodes;
+        nodes = parseTlv(decrypted + '9000').nodes;
       }
       out.records.push({ sfi, record, encrypted, decrypted, nodes });
     }
-    // 5) Tüm tag'lerin düz listesi (arama/özet için)
+
+    // 6) Tüm tag'lerin düz listesi + perso profiliyle karşılaştırma
     const flat = [];
     const walk = (ns) => { for (const n of ns || []) { flat.push({ tag: n.tag, name: n.name || null, length: n.length, value: n.constructed ? null : n.value }); if (n.children) walk(n.children); } };
-    walk(fci.nodes); walk(gnodes); for (const r of out.records) walk(r.nodes);
+    walk(fciNodes); walk(gnodes); for (const r of out.records) walk(r.nodes);
     out.tagCount = flat.length;
     out.flatTags = flat;
+    out.profile = compareWithProfile(out.kernelUsed, flat);
+    const expAip = expectedAip(out.kernelUsed);
+    if (expAip) out.aipCheck = { expected: expAip, actual: aip || null, match: (aip || '').toUpperCase() === expAip.toUpperCase() };
     out.steps = steps;
     res.json(out);
   } catch (err) { res.status(500).json({ error: err.message, steps }); }

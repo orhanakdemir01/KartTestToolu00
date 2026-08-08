@@ -1,0 +1,208 @@
+// Mastercard Ecos perso profili — referans (kullanıcının sağladığı Ecos
+// personalization profile dokümanından birebir aktarıldı).
+//
+// Ecos kartı ÇİFT KERNEL'dir: temassız arayüzde hem Kernel 2 (mevcut PayPass
+// POS'ları) hem Kernel 8 (yeni ECC/AES POS'ları) desteklenir. Kart PPSE'de İKİ
+// dizin girişi yayınlar (aynı AID, farklı Kernel Identifier 9F2A) ve terminal
+// hangi kernel'i kullandığını GPO'daki PDOL verisiyle bildirir. Kernel'e göre
+// kart FARKLI kayıt seti ve farklı AIP/CDOL1 döndürür — bu dosya her kernel için
+// beklenen alanları tutar; okunan kartla karşılaştırma bunun üzerinden yapılır.
+//
+// NOT: Bu profil bir REFERANS/şablondur. Sahadaki kartın perso'su (ör. CA PK
+// index) farklı olabilir; karşılaştırma farkı "uyumsuz" değil "profilden sapma"
+// olarak raporlanır — yorum kullanıcıya bırakılır.
+
+// Kernel kimlikleri (PPSE dizin girişi tag 9F2A)
+export const KERNEL_IDS = { '2': '02', '8': '08' };
+
+// Select ADF — her iki kernel için ortak FCI alanları
+const FCI_COMMON = {
+  '50': { name: 'Application Label', value: '4D617374657263617264', note: 'Mastercard' },
+  '84': { name: 'Dedicated File Name (AID)', value: 'A0000000041010', note: 'Mastercard AID' },
+  '5F2D': { name: 'Language Preference', value: '7472656E', note: 'tr + en' },
+  '9F6E': { name: 'Third Party Data', value: '07920000303000', note: 'Ülke 0792 (TR), cihaz tipi 00 = kart' },
+};
+
+export const ECOS_PROFILE = {
+  source: 'Mastercard Ecos perso profili (kullanıcı dokümanı)',
+
+  // ── Select ADF / FCI ──────────────────────────────────────────────
+  fci: { name: 'FCI (ortak)', tags: FCI_COMMON },
+  fciContact: {
+    name: 'FCI · temaslı',
+    tags: { '87': { name: 'Application Priority Indicator', value: '01', note: 'Temaslı arayüzde birincil' } },
+  },
+  fciContactlessAdf: {
+    name: 'FCI · temassız ADF',
+    tags: {
+      '9F2C': { name: 'Card Qualifier', value: '0200FFFF000000', note: 'Uygulama Kernel 8 işlemlerini destekler' },
+      '9F38': { name: 'PDOL', value: '9F2B029E40', note: 'Ecos temassız için ZORUNLU — 9F2B(2B) + 9E(64B efemer PK)' },
+    },
+  },
+
+  // ── PPSE dizin girişleri — kartın hangi kernel'leri yayınladığı ───
+  ppseKernel2: {
+    name: 'PPSE girişi · Kernel 2',
+    tags: {
+      '87': { name: 'Application Priority Indicator', value: '02', note: 'Kernel 2 girişi için öncelik' },
+      '9F2A': { name: 'Kernel Identifier', value: '02', note: 'Kernel 2 (opsiyonel)' },
+    },
+  },
+  ppseKernel8: {
+    name: 'PPSE girişi · Kernel 8',
+    tags: {
+      '87': { name: 'Application Priority Indicator', value: '01', note: 'Kernel 8 girişi için öncelik' },
+      '9F2A': { name: 'Kernel Identifier', value: '08', note: 'Kernel 8 (ZORUNLU)' },
+    },
+  },
+
+  // ── READ RECORD alanları — kernel'e göre AYRIŞIR ──────────────────
+  recordContact: {
+    name: 'Kayıtlar · temaslı',
+    tags: {
+      '9F42': { name: 'Application Currency Code', value: '0949', note: 'TRY' },
+      '9F07': { name: 'Application Usage Control', value: 'FFC0' },
+      '9F08': { name: 'Application Version Number', value: '0002' },
+      '8C': { name: 'CDOL1', value: '9F02069F03069F1A0295055F2A029A039C019F37049F35019F45029F4C089F3403' },
+      '8D': { name: 'CDOL2', value: '910A8A0295059F37049F4C08' },
+      '8E': { name: 'CVM List', value: '000000000000000042011E0302031F03' },
+      '8F': { name: 'CA Public Key Index', value: '06', note: 'RSA 1984 bit' },
+      '9F49': { name: 'DDOL', value: '9F3704', note: 'DDA destekleniyor' },
+      '9F0D': { name: 'IAC - Default', value: '0000000000' },
+      '9F0E': { name: 'IAC - Denial', value: '0000000000' },
+      '9F0F': { name: 'IAC - Online', value: '0000000000' },
+      '5F28': { name: 'Issuer Country Code', value: '0792', note: 'TR' },
+      '9F4A': { name: 'SDA Tag List', value: '82' },
+    },
+  },
+  recordContactlessKernel2: {
+    name: 'Kayıtlar · temassız Kernel 2',
+    tags: {
+      '9F42': { name: 'Application Currency Code', value: '0949' },
+      '9F07': { name: 'Application Usage Control', value: 'FFC0' },
+      '9F08': { name: 'Application Version Number', value: '0002' },
+      '8C': { name: 'CDOL1 (Kernel 2)', value: '9F02069F03069F1A0295055F2A029A039C019F37049F34039F1D08' },
+      '8D': { name: 'CDOL2', value: '910A', note: 'Eski PayPass terminalleri için dummy' },
+      '8E': { name: 'CVM List', value: '000000000000000042031E031F03' },
+      '8F': { name: 'CA Public Key Index', value: '06', note: 'RSA 1984 bit' },
+      '9F0D': { name: 'IAC - Default', value: '0000000000' },
+      '9F0E': { name: 'IAC - Denial', value: '0000000000' },
+      '9F0F': { name: 'IAC - Online', value: '0000000000' },
+      '5F28': { name: 'Issuer Country Code', value: '0792' },
+      '9F4A': { name: 'SDA Tag List', value: '82' },
+    },
+  },
+  recordContactlessKernel8: {
+    name: 'Kayıtlar · temassız Kernel 8',
+    tags: {
+      '9F07': { name: 'Application Usage Control', value: 'FFC0' },
+      '9F810D': { name: 'Card Capabilities Information', value: '7068', note: 'Çift arayüz + manyetik şerit; Online PIN + imza + No CVM' },
+      '8F': { name: 'CA Public Key Index', value: '08', note: 'P-256 ECC CA PK' },
+      '9F810A': { name: 'Extended SDA Tag List', value: '9F069F389F2C8C', note: 'AID, PDOL, Card Qualifier, CDOL1' },
+      '9F8107': { name: 'IAD MAC Offset', value: '0A', note: 'IAD MAC, IAD bayt 11-18\'e kopyalanır' },
+    },
+  },
+
+  // ── Kart-içi (internal) parametreler — okunmaz, referans ──────────
+  internalContact: {
+    name: 'İç parametreler · temaslı',
+    tags: {
+      'DF3A': { name: 'AC Session Key Counter Limit', value: '4E20', note: '20.000' },
+      'D3': { name: 'Additional Check Table', value: '000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF' },
+      'D5': { name: 'Application Control', value: '8022', note: 'IAD extension AC hesabına dahil; TC sonrası alternatif arayüz açılır' },
+      '82': { name: 'Application Interchange Profile', value: '3900', note: 'CDA + DDA destekli' },
+      'C3': { name: 'CIAC - Decline', value: '000000' },
+      'C4': { name: 'CIAC - Default', value: '000004', note: 'UTGO Counter Limit Exceeded biti' },
+      'C8': { name: 'CRM Country Code', value: '0792' },
+      'C7': { name: 'CDOL1 Related Data Length', value: '2B' },
+      'CVN': { name: 'Cryptogram Version Number', value: '17', note: 'AES oturum anahtarı + IAD extension AC\'de' },
+      'DF30': { name: 'Interface Enabling Switch', value: '00', note: 'Profilde temassız arayüz KAPALI' },
+      '9F17': { name: 'PIN Try Counter', value: '01' },
+      'C6': { name: 'PIN Try Limit', value: '01', note: 'Offline PIN desteklenmiyor' },
+      'DF32': { name: 'SMI Session Key Counter Limit', value: '0400' },
+      'DF21': { name: 'Unable To Go Online Counter Limit', value: '00', note: 'Sadece-online profil' },
+    },
+  },
+  internalContactless: {
+    name: 'İç parametreler · temassız',
+    tags: {
+      'CA': { name: 'Accumulator Global Limit', value: '999999999999' },
+      'DF12': { name: 'Accumulator No CVM Limit', value: '999999999999' },
+      'D1': { name: 'Accumulator No SCA Limit', value: '999999999999' },
+      'D3': { name: 'Additional Check Table (Kernel 2)', value: '000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF' },
+      'DA': { name: 'Additional Check Table (Kernel 8)', value: '000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF' },
+      'D7': { name: 'Application Control', value: '044000', note: 'Session Key Derivation bitleri 10 = AES' },
+      'D8': { name: 'AIP (Kernel 2)', value: '1981', note: 'CDA + EMV mod + Relay Resistance' },
+      'DF45': { name: 'AIP (Kernel 8)', value: '0105', note: 'Local Authentication, sadece-online, IAD MAC kopyalama, Relay Resistance' },
+      '9F07': { name: 'Application Usage Control', value: 'FFC0' },
+      '9F08': { name: 'Application Version Number (Card)', value: '0002' },
+      'CF': { name: 'CIAC - Decline (SCA muaf değil)', value: '0000' },
+      'CE': { name: 'CIAC - Decline (SCA muaf)', value: '0000' },
+      'C8': { name: 'CRM Country Code', value: '0792' },
+      'DF2F': { name: 'CRM Currency Code', value: '0949' },
+      '8C': { name: 'CDOL1 (Kernel 8)', value: '9F02069F03069F1A0295055F2A029A039C019F37049F34039F1D089F810C029F09029F35019F4005' },
+      'C7': { name: 'CDOL1 Related Data Length (Kernel 2)', value: '28' },
+      'DC': { name: 'CDOL1 Related Data Length (Kernel 8)', value: '32' },
+      '9F14': { name: 'Counter Global Limit', value: 'FF' },
+      'DF1D': { name: 'Counter No CVM Limit', value: 'FF' },
+      'DF2E': { name: 'Counter No SCA Limit', value: 'FF' },
+      'DF4F': { name: 'CVM Entries Table', value: '000201020101020101', note: '3 satır: No CVM/Online PIN/İmza kombinasyonları' },
+      'DF4E': { name: 'CVR Filling Table', value: '00000064616243420000000000000000' },
+      'DF23': { name: 'Max Transaction Amount Global', value: '999999999999' },
+      'DF25': { name: 'Max Transaction Amount No CVM', value: '999999999999' },
+      'DF26': { name: 'Max Transaction Amount No SCA', value: '999999999999' },
+      'DF51': { name: 'Restart Indicator', value: '3118', note: 'Çift arayüz — TRY ANOTHER INTERFACE' },
+    },
+  },
+};
+
+// Bir okuma turunda hangi profil bölümünün beklendiği (arayüz + kernel).
+export function expectedSectionFor(mode) {
+  if (mode === 'contact') return ECOS_PROFILE.recordContact;
+  if (mode === 'k2') return ECOS_PROFILE.recordContactlessKernel2;
+  if (mode === 'k8') return ECOS_PROFILE.recordContactlessKernel8;
+  return null;
+}
+
+// Beklenen AIP (kernel'e göre) — GPO yanıtı bununla karşılaştırılır.
+export function expectedAip(mode) {
+  if (mode === 'contact') return ECOS_PROFILE.internalContact.tags['82'].value;
+  if (mode === 'k2') return ECOS_PROFILE.internalContactless.tags['D8'].value;
+  if (mode === 'k8') return ECOS_PROFILE.internalContactless.tags['DF45'].value;
+  return null;
+}
+
+// Karttan okunan tag'leri profille karşılaştır. Döner: her beklenen tag için
+// { tag, name, expected, actual, status } — status: match | differs | missing.
+// Kartta olup profilde olmayanlar 'extra' olarak ayrı listelenir.
+export function compareWithProfile(mode, flatTags) {
+  const section = expectedSectionFor(mode);
+  if (!section) return null;
+  // TLV değerleri baytlar arası boşlukla gelir ("09 49") — karşılaştırmadan önce
+  // normalize et, yoksa her alan yanlışlıkla "farklı" görünür.
+  const norm = (h) => (h || '').replace(/\s/g, '').toUpperCase();
+  // Aynı tag birden çok kayıtta geçebilir — ilk dolu değeri esas al.
+  const actualByTag = new Map();
+  for (const t of flatTags || []) {
+    if (t.value && !actualByTag.has(t.tag)) actualByTag.set(t.tag, norm(t.value));
+  }
+  const rows = [];
+  for (const [tag, exp] of Object.entries(section.tags)) {
+    const actual = actualByTag.get(tag) || null;
+    rows.push({
+      tag, name: exp.name, note: exp.note || null,
+      expected: norm(exp.value), actual,
+      status: !actual ? 'missing' : (actual === norm(exp.value) ? 'match' : 'differs'),
+    });
+  }
+  const expectedTags = new Set(Object.keys(section.tags));
+  const extra = [...actualByTag.entries()]
+    .filter(([tag]) => !expectedTags.has(tag))
+    .map(([tag, value]) => ({ tag, value }));
+  const counts = {
+    match: rows.filter((r) => r.status === 'match').length,
+    differs: rows.filter((r) => r.status === 'differs').length,
+    missing: rows.filter((r) => r.status === 'missing').length,
+  };
+  return { section: section.name, rows, extra, counts };
+}

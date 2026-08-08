@@ -20,31 +20,9 @@ export function CapkTab({
         </div>
       </div>
       <p className="muted small">EMV offline veri doğrulama (SDA/DDA/CDA) için şema CA public key'leri. Satırdaki <b>Düzenle</b> ile mevcut anahtarı değiştirebilirsin.</p>
-      <div className="capk-scroll">
-        <table className="capk-table">
-          <thead><tr><th>Şema</th><th>RID</th><th>Index</th><th>Exp</th><th>Bit</th><th>SHA-1</th><th></th></tr></thead>
-          <tbody>
-            {capks.filter((k) => capkFilter === 'all' || k.scheme === capkFilter).map((k, i) => {
-              const isRow = capkEdit && capkEdit.origRid === k.rid && capkEdit.origIndex === k.index;
-              return (
-                <tr key={i} className={isRow ? 'capk-editing' : ''}>
-                  <td>{k.scheme}</td>
-                  <td className="mono">{k.rid}</td>
-                  <td className="mono b">{k.index}</td>
-                  <td className="mono">{k.exponent}</td>
-                  <td>{k.keyLength}</td>
-                  <td className="mono small capk-hash" title={`Modulus:\n${k.modulus}`}>{k.hash}</td>
-                  <td className="capk-actions">
-                    <button className="btn-sm ghost" onClick={() => startEditCapk(k)}>Düzenle</button>
-                    <button className="btn-sm ghost" onClick={() => { if (confirm(`Silinsin mi? ${k.scheme} ${k.rid}/${k.index}`)) deleteCapk(k); }}>Sil</button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
 
+      {/* Ekleme/düzenleme formu listenin ÜSTÜNDE: liste uzun (80+ anahtar),
+          formu altta tutmak her girişte sonuna kadar kaydırmayı zorunlu kılıyordu. */}
       <details className="builder" open={editing}>
         <summary>{editing ? `✎ Düzenle: ${capkEdit.origRid} / ${capkEdit.origIndex}` : 'Yeni CA anahtarı ekle'}</summary>
         <div className="capk-add">
@@ -75,6 +53,32 @@ export function CapkTab({
           )}
         </div>
       </details>
+
+      <div className="capk-scroll">
+        <table className="capk-table">
+          <thead><tr><th>Şema</th><th>RID</th><th>Index</th><th>Exp</th><th>Bit</th><th>SHA-1</th><th></th></tr></thead>
+          <tbody>
+            {capks.filter((k) => capkFilter === 'all' || k.scheme === capkFilter).map((k, i) => {
+              const isRow = capkEdit && capkEdit.origRid === k.rid && capkEdit.origIndex === k.index;
+              return (
+                <tr key={i} className={isRow ? 'capk-editing' : ''}>
+                  <td>{k.scheme}</td>
+                  <td className="mono">{k.rid}</td>
+                  <td className="mono b">{k.index}</td>
+                  <td className="mono">{k.exponent}</td>
+                  <td>{k.keyLength}</td>
+                  <td className="mono small capk-hash" title={`Modulus:\n${k.modulus}`}>{k.hash}</td>
+                  <td className="capk-actions">
+                    <button className="btn-sm ghost" onClick={() => startEditCapk(k)}>Düzenle</button>
+                    <button className="btn-sm ghost" onClick={() => { if (confirm(`Silinsin mi? ${k.scheme} ${k.rid}/${k.index}`)) deleteCapk(k); }}>Sil</button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
       <EccCapkPanel {...{ eccCapks, eccAddForm, setEccAddForm, addEccCapk, deleteEccCapk, eccAddResult }} />
     </section>
   );
@@ -90,28 +94,9 @@ function EccCapkPanel({ eccCapks, eccAddForm, setEccAddForm, addEccCapk, deleteE
       <div className="panel-head"><h2>ECC CA Public Keys ({eccCapks?.length || 0}) · Kernel 8</h2></div>
       <p className="muted small">Kernel 8 (ECC) çevrimdışı veri doğrulamasının <b>zincir kökü</b>. RSA CAPK'den ayrı depo: ECC anahtarı eğri üzerinde bir <b>nokta (x, y)</b> ve <b>Algorithm Suite Indicator</b> taşır — spec <span className="mono">[C-8 Tablo 4.3]</span> y'nin de saklanmasını önerir ki her işlemde yeniden hesaplanmasın. Eklerken nokta <b>P-256 eğrisi üzerinde mi</b> diye sınanır; checksum verilirse SHA-256/SHA-1 ile doğrulanır, verilmezse hesaplanır.</p>
       {(!eccCapks || eccCapks.length === 0) && <p className="err-text small">⚠ ECC CA anahtarı yok — Kernel 8 ODA zinciri doğrulanamaz.</p>}
-      {eccCapks?.length > 0 && (
-        <div className="capk-scroll">
-          <table className="capk-table">
-            <thead><tr><th>Şema</th><th>RID</th><th>Index</th><th>Suite</th><th>Eğri</th><th>Tip</th><th>Checksum</th><th></th></tr></thead>
-            <tbody>
-              {eccCapks.map((k, i) => (
-                <tr key={i}>
-                  <td>{k.scheme}</td>
-                  <td className="mono small">{k.rid}</td>
-                  <td className="mono">{k.index}</td>
-                  <td className="mono small">{k.suite}</td>
-                  <td className="small">{k.curve}</td>
-                  <td><span className={`kcv-tag ${k.keyType === 'Live' ? '' : 'aes'}`}>{k.keyType}</span></td>
-                  <td className="mono small muted" title={k.hash}>{(k.hash || '').slice(0, 16)}…</td>
-                  <td><button className="btn-ghost" onClick={() => deleteEccCapk(k)}>Sil</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <details className="builder" style={{ marginTop: 10 }}>
+
+      {/* Form listenin ÜSTÜNDE — RSA bölümüyle aynı gerekçe (bkz. yukarısı). */}
+      <details className="builder" style={{ marginBottom: 10 }}>
         <summary>ECC CA anahtarı ekle</summary>
         <div className="capk-add">
           <div className="capk-add-row">
@@ -143,6 +128,28 @@ function EccCapkPanel({ eccCapks, eccAddForm, setEccAddForm, addEccCapk, deleteE
           )}
         </div>
       </details>
+
+      {eccCapks?.length > 0 && (
+        <div className="capk-scroll">
+          <table className="capk-table">
+            <thead><tr><th>Şema</th><th>RID</th><th>Index</th><th>Suite</th><th>Eğri</th><th>Tip</th><th>Checksum</th><th></th></tr></thead>
+            <tbody>
+              {eccCapks.map((k, i) => (
+                <tr key={i}>
+                  <td>{k.scheme}</td>
+                  <td className="mono small">{k.rid}</td>
+                  <td className="mono">{k.index}</td>
+                  <td className="mono small">{k.suite}</td>
+                  <td className="small">{k.curve}</td>
+                  <td><span className={`kcv-tag ${k.keyType === 'Live' ? '' : 'aes'}`}>{k.keyType}</span></td>
+                  <td className="mono small muted" title={k.hash}>{(k.hash || '').slice(0, 16)}…</td>
+                  <td><button className="btn-ghost" onClick={() => deleteEccCapk(k)}>Sil</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

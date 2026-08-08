@@ -323,64 +323,88 @@ app.post('/api/ecos/full-transaction', async (req, res) => {
     if ((k.keyType || '3des') === '3des') return res.json({ error: 'Seçilen anahtar 3DES — ECOS için AES gerekli' });
 
     const steps = [];
-    const run = async (name, cmd) => { const { response, sw } = await transmitChain(clean0(cmd), preferReader); steps.push({ name, command: clean0(cmd), response, sw, swText: describeSw(sw), ok: sw === '9000' }); return { response: clean0(response), sw }; };
 
-    // 1) Kart bağlamı: SELECT→GPO→READ→GENERATE AC (1. ARQC)
-    const ctx = await discoverCardContext(preferReader);
-    if (ctx.error) return res.json({ error: ctx.error, steps: ctx.steps });
-    if (!ctx.arqc || !ctx.atc) return res.json({ error: 'Karttan ARQC/ATC alınamadı (GENERATE AC başarısız)', steps: ctx.steps });
-    steps.push(...(ctx.steps || []));
-
-    // 2) AES ARQC doğrula → kartın kullandığı SKac'ı bul
-    const td = terminalDefaults();
-    const iadP = parseEcosIad(ctx.iad || '');
-    const cvn = iadP?.cvnDecoded || null;
-    const cvr = iadP?.cvr || '';
-    const ext = (cvn?.extendedInput && iadP?.iadExt) ? iadP.iadExt : '';
-    const terminal = { amountAuth: td['9F02'], amountOther: td['9F03'], termCountry: td['9F1A'], tvr: td['95'], txnCurrency: td['5F2A'], txnDate: td['9A'], txnType: td['9C'], un: td['9F37'] };
-    const vr = verifyEcosArqcAes({ key: k, atc: ctx.atc, pan: ctx.pan, psn: ctx.psn, aip: ctx.aip, cvr, iadExt: ext, terminal, cardArqc: ctx.arqc });
-    const arqcOut = { cardArqc: ctx.arqc, computed: vr.computed, match: vr.match, usedMaskedCvr: vr.usedMaskedCvr, verdict: vr.match ? 'PASS' : 'FAIL', acInput: vr.acInput, skac: vr.skac, mkac: vr.mkac };
-    const out = { pan: ctx.pan, aid: ctx.aid, atc: ctx.atc, aip: ctx.aip, iad: ctx.iad, cvn, cvr, arc, arqc: arqcOut };
-    if (!vr.match) { out.error = 'ARQC eşleşmedi — issuer auth için doğru SKac gerekir (anahtar/PAN kontrol edin)'; out.steps = steps; return res.json(out); }
-
-    // 3) ARPC (AES CSK) = AES-CMAC(SKac)[ARQC‖ARPC-RC‖00×6]; tag 91 = ARPC(8)‖ARPC-RC(2)
-    const arpc = ecosArpcAes(vr.skac, ctx.arqc, arc);
-    const issuerAuthData = arpc + arc;
-    out.arpc = { value: arpc, arpcRc: arc, issuerAuthData };
-
-    // 4) 2. GENERATE AC (P1=40 TC) ile ARPC'yi karta ilet. Diferansiyel: doğru + bozuk.
-    const send2 = async (iad91, label) => {
-      const defs = { ...terminalDefaults(), '91': iad91, '8A': arc };
-      const cdol2Data = ctx.cdol2 ? buildDol(parseDol(ctx.cdol2), defs) : (iad91 + arc);
-      const g2 = await run(`GENERATE AC 2 (issuer auth${label})`, `80AE4000${(cdol2Data.length / 2).toString(16).padStart(2, '0').toUpperCase()}${cdol2Data}00`);
+    // Tek tur = TAZE bir işlem: SELECT→GPO→READ→GENERATE AC (ARQC) → ARQC doğrula →
+    // ARPC hesapla → 2. GENERATE AC ile karta ilet.
+    //
+    // KRİTİK: her tur AYRI bir işlem olmalı. 2. GENERATE AC işlemi SONLANDIRIR;
+    // aynı oturumda ikinci kez göndermek kartın "işlem bitti" demesine (6985) yol
+    // açar ve bu yanlışlıkla "bozuk ARPC reddedildi" sanılır. Bu yüzden bozuk tur
+    // kendi discoverCardContext'ini (yeni ATC/ARQC) çalıştırır — /api/arpc ile aynı
+    // yaklaşım.
+    const round = async (corrupt) => {
+      const run = async (name, cmd) => { const { response, sw } = await transmitChain(clean0(cmd), preferReader); steps.push({ name, command: clean0(cmd), response, sw, swText: describeSw(sw), ok: sw === '9000' }); return { response: clean0(response), sw }; };
+      const ctx = await discoverCardContext(preferReader);
+      if (ctx.error) return { error: ctx.error };
+      if (!ctx.arqc || !ctx.atc) return { error: 'Karttan ARQC/ATC alınamadı (GENERATE AC başarısız)' };
+      steps.push(...(ctx.steps || []));
+      const td = terminalDefaults();
+      const iadP = parseEcosIad(ctx.iad || '');
+      const cvn = iadP?.cvnDecoded || null;
+      const cvr = iadP?.cvr || '';
+      const ext = (cvn?.extendedInput && iadP?.iadExt) ? iadP.iadExt : '';
+      const terminal = { amountAuth: td['9F02'], amountOther: td['9F03'], termCountry: td['9F1A'], tvr: td['95'], txnCurrency: td['5F2A'], txnDate: td['9A'], txnType: td['9C'], un: td['9F37'] };
+      const vr = verifyEcosArqcAes({ key: k, atc: ctx.atc, pan: ctx.pan, psn: ctx.psn, aip: ctx.aip, cvr, iadExt: ext, terminal, cardArqc: ctx.arqc });
+      if (!vr.match) return { error: 'ARQC eşleşmedi — issuer auth için doğru SKac gerekir (anahtar/PAN kontrol edin)', ctx, cvn, cvr, vr };
+      // ARPC (AES CSK) = AES-CMAC(SKac)[ARQC‖ARPC-RC‖00×6]; tag 91 = ARPC(8)‖ARPC-RC(2)
+      const arpc = ecosArpcAes(vr.skac, ctx.arqc, arc);
+      const trueIad = arpc + arc;
+      const sentIad = corrupt ? flip1(trueIad) : trueIad;
+      const defs = { ...terminalDefaults(), '91': sentIad, '8A': arc };
+      const cdol2Data = ctx.cdol2 ? buildDol(parseDol(ctx.cdol2), defs) : (sentIad + arc);
+      const g2 = await run(`GENERATE AC 2 (issuer auth${corrupt ? ' · BOZUK ARPC' : ''})`, `80AE4000${(cdol2Data.length / 2).toString(16).padStart(2, '0').toUpperCase()}${cdol2Data}00`);
       const n2 = tlvFromResponse(g2.response).nodes;
       const t80 = findTag(n2, '80');
       const cid = t80 ? clean0(t80.value).slice(0, 2) : clean0(findTag(n2, '9F27')?.value);
       const acType = cid ? (parseInt(cid, 16) & 0xC0) : null;
-      return { cid, acType, cidLabel: cidLabel(acType), sw: g2.sw, swText: describeSw(g2.sw), sentIssuerAuthData: iad91 };
+      return {
+        ctx, cvn, cvr, vr, arpc, trueIad,
+        sent: { cid, acType, cidLabel: cidLabel(acType), sw: g2.sw, swText: describeSw(g2.sw), sentIssuerAuthData: sentIad, atc: ctx.atc, corrupt },
+      };
     };
-    const correct = await send2(issuerAuthData, '');
+
+    // 1) Doğru ARPC turu
+    const r1 = await round(false);
+    if (r1.error) {
+      const o = { error: r1.error, steps };
+      if (r1.ctx) Object.assign(o, { pan: r1.ctx.pan, atc: r1.ctx.atc, aip: r1.ctx.aip, iad: r1.ctx.iad, cvn: r1.cvn, cvr: r1.cvr,
+        arqc: { cardArqc: r1.ctx.arqc, computed: r1.vr?.computed, match: false, verdict: 'FAIL' } });
+      return res.json(o);
+    }
+    const out = {
+      pan: r1.ctx.pan, aid: r1.ctx.aid, atc: r1.ctx.atc, aip: r1.ctx.aip, iad: r1.ctx.iad, cvn: r1.cvn, cvr: r1.cvr, arc,
+      arqc: { cardArqc: r1.ctx.arqc, computed: r1.vr.computed, match: true, usedMaskedCvr: r1.vr.usedMaskedCvr, verdict: 'PASS', acInput: r1.vr.acInput, skac: r1.vr.skac, mkac: r1.vr.mkac },
+      arpc: { value: r1.arpc, arpcRc: arc, issuerAuthData: r1.trueIad },
+    };
+    const correct = r1.sent;
     correct.accepted = correct.acType === 0x40;
     const ia = { method: 'Method AES — 2. GENERATE AC · tag 91 (ARPC‖ARPC-RC)', correct };
 
     if (differential) {
-      const corrupt = await send2(flip1(issuerAuthData), ' · BOZUK ARPC');
-      // Bozuk ARPC "reddedildi" = TC almadı: ya AAC (0x00) ya da hata SW (6985/6300/
-      // 6983… — kart bozuk issuer-auth'u SW ile reddedebilir, AAC döndürmek zorunda değil).
-      const corruptRejected = corrupt.acType === 0x00 || (corrupt.sw !== '9000' && corrupt.acType !== 0x40);
-      corrupt.rejected = corruptRejected;
-      ia.corrupt = corrupt;
-      const rejWord = corrupt.acType === 0x00 ? 'AAC' : `SW ${corrupt.sw}`;
-      if (correct.accepted && corruptRejected) { ia.verdict = 'PASS'; ia.note = `Diferansiyel ✓ — doğru ARPC kabul (TC), bozuk ARPC red (${rejWord}): kart issuer authentication'ı KRİPTOGRAFİK doğruluyor.`; }
-      else if (correct.accepted && corrupt.acType === 0x40) { ia.verdict = 'NA'; ia.note = 'Kart bozuk ARPC\'ye de TC döndü → ARPC değeri kararı etkilemiyor (issuer auth uygulanmıyor); ARQC/SKac doğrulandı, kripto sorunu yok.'; }
-      else if (!correct.accepted && correct.acType === corrupt.acType && correct.sw === corrupt.sw) { ia.verdict = 'NA'; ia.note = `Kart doğru ve bozuk ARPC'ye AYNI yanıtı (${correct.cidLabel || correct.sw}) verdi → bu profilde offline TC/issuer-auth gözlenemez. ARQC/SKac DOĞRULANDI — kripto sorunu yok, kart kusuru değil.`; }
-      else { ia.verdict = 'WARN'; ia.note = `Doğru ARPC → ${correct.cidLabel || correct.sw}, bozuk ARPC → ${corrupt.cidLabel || corrupt.sw}: beklenmedik, issuer-auth kesin doğrulanamadı.`; }
+      // 2) Bozuk ARPC turu — TAZE işlem (kendi ATC'si), yoksa 6985 sadece
+      //    "işlem zaten bitti" demek olur ve reddi kanıtlamaz.
+      const r2 = await round(true);
+      if (r2.error) {
+        ia.verdict = 'WARN';
+        ia.note = `Bozuk-ARPC turu çalıştırılamadı (${r2.error}) — diferansiyel kanıt yok.`;
+      } else {
+        const corrupt = r2.sent;
+        // TC almadı = reddedildi. AAC (0x00) ya da hata SW ikisi de geçerli reddir.
+        corrupt.rejected = corrupt.acType === 0x00 || (corrupt.sw !== '9000' && corrupt.acType !== 0x40);
+        ia.corrupt = corrupt;
+        ia.sameTransaction = false;
+        const rejWord = corrupt.acType === 0x00 ? 'AAC' : `SW ${corrupt.sw}`;
+        if (correct.accepted && corrupt.rejected) { ia.verdict = 'PASS'; ia.note = `Diferansiyel ✓ — ayrı işlemlerde: doğru ARPC kabul (TC, ATC ${correct.atc}), bozuk ARPC red (${rejWord}, ATC ${corrupt.atc}). Kart issuer authentication'ı KRİPTOGRAFİK doğruluyor.`; }
+        else if (correct.accepted && corrupt.acType === 0x40) { ia.verdict = 'NA'; ia.note = 'Kart bozuk ARPC\'ye de TC döndü → ARPC değeri kararı etkilemiyor (issuer auth uygulanmıyor); ARQC/SKac doğrulandı, kripto sorunu yok.'; }
+        else if (!correct.accepted && correct.acType === corrupt.acType && correct.sw === corrupt.sw) { ia.verdict = 'NA'; ia.note = `Kart doğru ve bozuk ARPC'ye AYNI yanıtı (${correct.cidLabel || correct.sw}) verdi → ARPC kararı etkilemiyor. ARQC/SKac DOĞRULANDI — kripto sorunu yok, bu profilde issuer-auth gözlenemiyor.`; }
+        else { ia.verdict = 'WARN'; ia.note = `Doğru ARPC → ${correct.cidLabel || correct.sw}, bozuk ARPC → ${corrupt.cidLabel || corrupt.sw}: beklenmedik, issuer-auth kesin doğrulanamadı.`; }
+      }
     } else {
       ia.verdict = correct.accepted ? 'PASS' : 'WARN';
       ia.note = correct.accepted ? 'Kart TC döndü — kesin kanıt için diferansiyel testi açın (bozuk ARPC reddi).' : `Kart ${correct.cidLabel} döndü.`;
     }
     out.issuerAuth = ia;
-    out.verdict = arqcOut.verdict === 'PASS' && (ia.verdict === 'PASS' || ia.verdict === 'NA') ? 'PASS' : (ia.verdict === 'WARN' ? 'WARN' : arqcOut.verdict);
+    out.verdict = out.arqc.verdict === 'PASS' && (ia.verdict === 'PASS' || ia.verdict === 'NA') ? 'PASS' : (ia.verdict === 'WARN' ? 'WARN' : out.arqc.verdict);
     out.steps = steps;
     res.json(out);
   } catch (err) { res.status(500).json({ error: err.message }); }

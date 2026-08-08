@@ -180,10 +180,12 @@ function EcosTxResultView({ r }) {
         <table className="kv-table"><tbody>
           <tr><td>ARPC</td><td className="mono">{p.value}</td></tr>
           <tr><td>Issuer Auth Data (91)</td><td className="mono small">{p.issuerAuthData} <span className="muted">(ARC {r.arc})</span></td></tr>
-          <tr><td>Doğru ARPC → kart</td><td className={c.accepted ? 'capk-ok' : ''}>
-            <span className="mono">{c.cidLabel || '—'}</span> · SW {c.sw} {c.accepted ? '✓ kabul (TC)' : ''}</td></tr>
-          {x && <tr><td>Bozuk ARPC → kart</td><td className={x.rejected ? 'capk-ok' : 'err-text'}>
-            <span className="mono">{x.cidLabel || '—'}</span> · SW {x.sw} {x.rejected ? '✓ red' : '✗ reddetmedi'}</td></tr>}
+          <tr><td>Doğru ARPC → kart{c.atc ? <><br /><span className="small muted">işlem ATC {c.atc}</span></> : null}</td>
+            <td className={c.accepted ? 'capk-ok' : ''}>
+              <span className="mono">{c.cidLabel || '—'}</span> · SW {c.sw} {c.accepted ? '✓ kabul (TC)' : ''}</td></tr>
+          {x && <tr><td>Bozuk ARPC → kart{x.atc ? <><br /><span className="small muted">AYRI işlem · ATC {x.atc}</span></> : null}</td>
+            <td className={x.rejected ? 'capk-ok' : 'err-text'}>
+              <span className="mono">{x.cidLabel || '—'}</span> · SW {x.sw} {x.rejected ? '✓ red' : '✗ reddetmedi'}</td></tr>}
         </tbody></table>
         {ia.note && <p className={`small ${vClass(ia.verdict)}`} style={{ marginTop: 4 }}>↳ {ia.note}</p>}
       </>}

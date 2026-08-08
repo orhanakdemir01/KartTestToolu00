@@ -14,7 +14,10 @@ export function KeysTab({
     <section className="panel">
       <div className="panel-head"><h2>Oturum Anahtarları ({sessionKeys.length})</h2></div>
       <p className="muted small">Kriptogram işleme için <b>3DES</b> veya <b>AES</b> (ECOS / Kernel 8) anahtarları (AC / MAC / ENC). Anahtar seviyesi: <b>master</b> (issuer MDK → PAN/PSN ile ICC türetilir), <b>icc</b> (ICC anahtarı → ATC ile session), <b>session</b> (doğrudan kullanılır). AES için <b>Tip</b> seç (AES-128/256); ECOS ARQC EMV CSK-AES ile hesaplanır. Satırdaki <b>Düzenle</b> ile değiştirebilirsin.</p>
+      {/* Sarmalayıcı şart: tablo tek başına kaydırılamaz, 9 sütun + nowrap
+          aksiyon sütunu panel sınırını taşırıyordu. */}
       {sessionKeys.length > 0 && (
+        <div className="capk-scroll">
         <table className="capk-table">
           <thead><tr><th>Etiket</th><th>PAN</th><th>PSN</th><th>Tip</th><th>Seviye</th><th>AC</th><th>MAC</th><th>ENC</th><th></th></tr></thead>
           <tbody>
@@ -37,6 +40,7 @@ export function KeysTab({
             })}
           </tbody>
         </table>
+        </div>
       )}
       <details className="builder" open={editing || sessionKeys.length === 0}>
         <summary>{editing ? `✎ Düzenle: ${keyEdit.origLabel}${keyEdit.origPan ? ' · ' + keyEdit.origPan : ''}` : 'Yeni anahtar seti ekle'}</summary>

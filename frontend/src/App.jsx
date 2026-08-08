@@ -24,6 +24,25 @@ import { TraceDock } from './components/TraceDock.jsx';
 
 const API = 'http://localhost:3001/api';
 
+// POST + JSON çözümleme, TEŞHİS EDİLEBİLİR hatalarla. Düz `catch` ile her sorunu
+// "bağlantı başarısız" göstermek yanıltıcı: backend ayakta ama eski sürüm çalışıyorsa
+// yeni endpoint 404 + HTML döner ve res.json() patlar. Bu üç durumu ayırt eder.
+async function apiPost(path, body) {
+  let res;
+  try {
+    res = await fetch(`${API}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  } catch {
+    throw new Error('Backend\'e ulaşılamıyor — çalışmıyor olabilir (backend/server.js)');
+  }
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    if (res.status === 404) throw new Error(`Endpoint bulunamadı (404: ${path}) — backend eski sürüm çalışıyor, yeniden başlatın`);
+    throw new Error(`Backend beklenmeyen yanıt verdi (HTTP ${res.status})`);
+  }
+}
+
 // SW1SW2 values that are expected "misses" during a GET DATA / read sweep — the
 // card simply doesn't hold that object. Muted in the trace instead of warned.
 const BENIGN_SW = new Set(['6A88', '6D00', '6A81', '6E00', '6985', '6A82', '6A83', '6700']);
@@ -585,16 +604,12 @@ function App() {
     if (!ecosForm.keyLabel) { setEcosResult({ error: 'AES anahtar seti seçin' }); setEcosBusy(false); return; }
     addTrace({ kind: 'event', msg: '═══ ECOS AES ARQC doğrulama başlatıldı ═══' });
     try {
-      const r = await fetch(`${API}/ecos/verify-arqc`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(withReader({ ...ecosForm })),
-      });
-      const d = await r.json();
+      const d = await apiPost('/ecos/verify-arqc', withReader({ ...ecosForm }));
       setEcosResult(d);
       if (d.error) addTrace({ kind: 'error', msg: `ECOS: ${d.error}` });
       else addTrace({ kind: d.match ? 'ok' : d.keyError ? 'warn' : 'event',
         msg: `ECOS ARQC ${d.atc ? '· ATC ' + d.atc : ''} · kart ${d.cardArqc}${d.computedArqc ? ' · hesap ' + d.computedArqc : ''}${d.verdict ? ' · ' + d.verdict : ''}${d.keyError ? ' · ' + d.keyError : ''}` });
-    } catch { setEcosResult({ error: 'Backend bağlantısı başarısız' }); }
+    } catch (e) { setEcosResult({ error: e.message }); addTrace({ kind: 'error', msg: `ECOS: ${e.message}` }); }
     setEcosBusy(false);
   };
 
@@ -603,12 +618,8 @@ function App() {
     setEcosManBusy(true); setEcosManResult(null);
     if (!ecosManForm.keyLabel || !ecosManForm.atc) { setEcosManResult({ error: 'AES anahtar ve ATC gerekli' }); setEcosManBusy(false); return; }
     try {
-      const r = await fetch(`${API}/ecos/compute-arqc`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(ecosManForm),
-      });
-      setEcosManResult(await r.json());
-    } catch { setEcosManResult({ error: 'Backend bağlantısı başarısız' }); }
+      setEcosManResult(await apiPost('/ecos/compute-arqc', ecosManForm));
+    } catch (e) { setEcosManResult({ error: e.message }); }
     setEcosManBusy(false);
   };
 
@@ -617,11 +628,7 @@ function App() {
     setEcosOdaBusy(true); setEcosOdaResult(null);
     addTrace({ kind: 'event', msg: '═══ ECOS temassız ECC ODA (BDH + EC-SDSA) başlatıldı ═══' });
     try {
-      const r = await fetch(`${API}/ecos/contactless-oda`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(withReader({ ...ecosOdaForm })),
-      });
-      const d = await r.json();
+      const d = await apiPost('/ecos/contactless-oda', withReader({ ...ecosOdaForm }));
       setEcosOdaResult(d);
       if (d.error) addTrace({ kind: 'error', msg: `ECOS ODA: ${d.error}` });
       else {
@@ -629,7 +636,7 @@ function App() {
         addTrace({ kind: d.verdict === 'PASS' ? 'ok' : 'warn',
           msg: `ECOS ODA ${d.verdict} · PAN ${d.pan || '?'} · CA ${ch.ca ? '✓' : '✗'} Issuer ${ch.issuer ? '✓' : '✗'} Card ${ch.card ? '✓' : '✗'}` });
       }
-    } catch { setEcosOdaResult({ error: 'Backend bağlantısı başarısız' }); }
+    } catch (e) { setEcosOdaResult({ error: e.message }); addTrace({ kind: 'error', msg: `ECOS ODA: ${e.message}` }); }
     setEcosOdaBusy(false);
   };
 
@@ -638,15 +645,11 @@ function App() {
     setEcosReadBusy(true); setEcosReadResult(null);
     addTrace({ kind: 'event', msg: '═══ ECOS kart içeriği okunuyor (SELECT · GPO · READ RECORD) ═══' });
     try {
-      const r = await fetch(`${API}/ecos/read-card`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(withReader({ ...ecosReadForm })),
-      });
-      const d = await r.json();
+      const d = await apiPost('/ecos/read-card', withReader({ ...ecosReadForm }));
       setEcosReadResult(d);
       if (d.error) addTrace({ kind: 'error', msg: `ECOS oku: ${d.error}` });
       else addTrace({ kind: 'ok', msg: `ECOS kart içeriği: ${d.tagCount} tag · ${d.records?.length || 0} kayıt · ECC ${d.eccMode ? 'açık' : 'kapalı'}` });
-    } catch { setEcosReadResult({ error: 'Backend bağlantısı başarısız' }); }
+    } catch (e) { setEcosReadResult({ error: e.message }); addTrace({ kind: 'error', msg: `ECOS oku: ${e.message}` }); }
     setEcosReadBusy(false);
   };
 
@@ -656,16 +659,12 @@ function App() {
     if (!ecosTxForm.keyLabel) { setEcosTxResult({ error: 'AES anahtar seti seçin' }); setEcosTxBusy(false); return; }
     addTrace({ kind: 'event', msg: '═══ ECOS uçtan uca test: ARQC → ARPC → issuer auth ═══' });
     try {
-      const r = await fetch(`${API}/ecos/full-transaction`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(withReader({ ...ecosTxForm })),
-      });
-      const d = await r.json();
+      const d = await apiPost('/ecos/full-transaction', withReader({ ...ecosTxForm }));
       setEcosTxResult(d);
       if (d.error) addTrace({ kind: 'error', msg: `ECOS uçtan uca: ${d.error}` });
       else addTrace({ kind: d.verdict === 'PASS' ? 'ok' : 'warn',
         msg: `ECOS uçtan uca ${d.verdict} · ARQC ${d.arqc?.match ? '✓' : '✗'} · issuer-auth ${d.issuerAuth?.verdict || '-'}` });
-    } catch { setEcosTxResult({ error: 'Backend bağlantısı başarısız' }); }
+    } catch (e) { setEcosTxResult({ error: e.message }); addTrace({ kind: 'error', msg: `ECOS uçtan uca: ${e.message}` }); }
     setEcosTxBusy(false);
   };
 

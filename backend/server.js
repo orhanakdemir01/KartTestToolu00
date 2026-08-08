@@ -26,6 +26,7 @@ import {
   compareWithProfile, expectedAip,
 } from './profilestore.js';
 import { listPacks, getPack, savePack, deletePack, validatePack, CHECK_TYPES } from './rulepacks.js';
+import { buildTraceability } from './traceability.js';
 import { buildPinChange, buildUnblockVariants, buildVerifyPlaintext } from './changepin.js';
 import { discoverCardContext } from './carddiscover.js';
 import { extractCardImage } from './cardimage.js';
@@ -185,6 +186,9 @@ app.post('/api/compliance', async (req, res) => {
       if (emv && !emv.__status) crypto = { oda: emv.oda, genac: emv.genac };
     } catch { /* crypto optional */ }
     const compliance = runCompliance(image, iface, crypto);
+    // İzlenebilirlik: gereksinim → spec kaynağı → sonuç ekseni (lab raporu için).
+    try { compliance.traceability = buildTraceability(compliance); }
+    catch { /* matris opsiyonel — uyumluluk sonucunu düşürmesin */ }
     // Geçmişe kaydet + önceki koşuya göre regresyon/düzelme tespiti (kart başına).
     try {
       const pan = panFromImage(image);

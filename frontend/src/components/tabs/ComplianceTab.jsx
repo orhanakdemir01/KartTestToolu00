@@ -200,6 +200,8 @@ function ComplianceResult({ res, label, busy, onRun, clear, present }) {
             </tbody>
           </table>
         </details>
+        {/* Kapsam "neye karşı denetlendi"yi, matris "kaynak bazında ne oldu"yu gösterir. */}
+        <TraceabilityView tr={c.traceability} iface={c.iface} />
         {c.categories.map((cat) => {
           const rules = filter === 'all' ? cat.rules : cat.rules.filter((r) => r.status === filter);
           if (!rules.length) return null;
@@ -224,6 +226,62 @@ function ComplianceResult({ res, label, busy, onRun, clear, present }) {
         })}
       </>}
     </div>
+  );
+}
+
+// İzlenebilirlik matrisi — gereksinim → spec kaynağı → sonuç.
+// Sertifikasyon laboratuvarı raporlarının beklediği eksen; kural listesinden
+// farklı olarak "hangi belgeden kaç denetim çalıştı, ne oldu" sorusunu yanıtlar.
+function TraceabilityView({ tr, iface }) {
+  if (!tr?.sources?.length) return null;
+  const t = tr.totals;
+  const csv = () => {
+    const esc = (v) => { const s = String(v ?? ''); return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const head = ['Kural ID', 'Kategori', 'Onem', 'Gereksinim', 'Spec Atfi', 'Kaynak', 'Durum', 'Kanit', 'Not', 'Koken'];
+    const body = tr.matrix.map((m) => [m.id, m.cat, m.sev, m.req, m.spec, m.source, m.status, m.evidence, m.detail, m.origin].map(esc).join(';'));
+    // Baştaki BOM: Excel onsuz UTF-8 varsaymıyor ve Türkçe karakterler bozuluyor.
+    // Not: blob.text() BOM'u spec gereği kırpar — varlığını doğrulamak için
+    // arrayBuffer'a bakmak gerekir.
+    const blob = new Blob(['﻿' + [head.join(';'), ...body].join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob); const a = document.createElement('a');
+    a.href = url; a.download = `izlenebilirlik-${iface || 'kart'}-${Date.now()}.csv`; a.click(); URL.revokeObjectURL(url);
+  };
+  return (
+    <details className="builder" style={{ marginTop: 10 }}>
+      <summary>İzlenebilirlik matrisi — {t.sourceCount} spec kaynağı · {t.applicable}/{t.rules} uygulanabilir · %{t.passRate} geçti</summary>
+      <div style={{ marginTop: 8 }}>
+        <div className="oda-info">
+          <span className="oda-chip">{t.rules} gereksinim</span>
+          <span className="mono small">{t.applicable} uygulanabilir</span>
+          <span className="mono small">{t.na} ilgisiz</span>
+          <span className={`mono small ${t.mandatoryFail ? 'err-text' : ''}`}>{t.mandatory} zorunlu · {t.mandatoryFail} kaldı</span>
+          <button className="btn-sm ghost" onClick={csv}>↧ Matris (CSV)</button>
+        </div>
+        <table className="kv-table" style={{ marginTop: 8 }}>
+          <thead><tr>
+            <th style={{ textAlign: 'left' }}>Spec kaynağı</th><th>Gereksinim</th><th>Uyg.</th>
+            <th>Geçti</th><th>Kaldı</th><th>Uyarı</th><th>İlgisiz</th><th>Oran</th>
+          </tr></thead>
+          <tbody>
+            {tr.sources.map((s) => (
+              <tr key={s.source}>
+                <td><b>{s.source}</b>{s.mandatory ? <span className="muted small"> · {s.mandatory} zorunlu</span> : null}</td>
+                <td className="mono">{s.rules}</td>
+                <td className="mono">{s.applicable}</td>
+                <td className="mono capk-ok">{s.pass || '—'}</td>
+                <td className={`mono ${s.fail ? 'err-text' : 'muted'}`}>{s.fail || '—'}</td>
+                <td className={`mono ${s.warn ? 'oda-partial' : 'muted'}`}>{s.warn || '—'}</td>
+                <td className="mono muted">{s.na || '—'}</td>
+                <td className={`mono ${s.passRate != null && s.passRate < 100 ? 'oda-partial' : ''}`}>{s.passRate != null ? `%${s.passRate}` : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="muted small" style={{ marginTop: 8 }}>
+          <b>Kapsam beyanı:</b> {tr.scopeNote}
+        </p>
+      </div>
+    </details>
   );
 }
 

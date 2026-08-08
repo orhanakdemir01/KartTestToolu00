@@ -504,6 +504,9 @@ a:hover { color: #1a9850; text-decoration: underline; }
 .capk-add input[maxlength="10"] { width: 134px; }
 .capk-add input[maxlength="12"] { width: 152px; }
 .capk-add input[maxlength="16"] { width: 186px; }
+.capk-add input[maxlength="32"] { width: 210px; }
+/* capk-wide içindeki select tam genişlik kaplasın (max-width kısıtını aşar). */
+.capk-add .capk-wide select { width: 100%; max-width: none; }
 .capk-add input:focus, .capk-add textarea:focus, .capk-add select:focus { outline: none; border-color: #1a9850; }
 
 /* Oturum — kaydet + karşılaştır satırları (etiket üstte, alan tam genişlik, buton hizalı) */

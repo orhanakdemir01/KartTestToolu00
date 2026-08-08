@@ -88,6 +88,51 @@ function EcosOdaResultView({ r }) {
   );
 }
 
+// Perso profili yöneticisi — profiller VERİDİR (backend profiles/*.json), kod değil.
+// Yeni bir issuer profili eklemek için kod değişikliği/sürüm gerekmez.
+function ProfileManager({ profiles, profileText, setProfileText, saveProfileJson, deleteProfileById, profileResult }) {
+  const onFile = async (e) => {
+    const f = e.target.files?.[0];
+    if (f) setProfileText(await f.text());
+    e.target.value = ''; // aynı dosya tekrar seçilebilsin
+  };
+  return (
+    <details className="builder" style={{ marginTop: 10 }}>
+      <summary>Perso profillerini yönet ({profiles?.length || 0})</summary>
+      <div className="capk-add">
+        <p className="muted small">Profil bir <b>JSON dosyasıdır</b> — motor sabit, beklenen değerler dışarıdan gelir. Yeni bir issuer profili eklemek için kod değişikliği gerekmez. Şema: <span className="mono">schemaVersion 1</span> · <span className="mono">sections</span> (bölüm → tag → beklenen değer) · <span className="mono">expectations</span> (okuma modu → hangi bölüm + beklenen AIP). Kaydetmeden önce yapısal olarak doğrulanır.</p>
+        {profiles?.length > 0 && (
+          <table className="kv-table"><tbody>
+            {profiles.map((p) => (
+              <tr key={p.id}>
+                <td><b>{p.name}</b><br /><span className="mono small muted">{p.id}{p.aid ? ` · AID ${p.aid}` : ''}</span></td>
+                <td className="small">{p.tagCount} tag · {(p.modes || []).join(', ')}</td>
+                <td><button className="btn-ghost" onClick={() => deleteProfileById(p.id)}>Sil</button></td>
+              </tr>
+            ))}
+          </tbody></table>
+        )}
+        <div className="capk-add-row">
+          <label className="capk-wide">Profil JSON (dosyadan yükle veya yapıştır)
+            <textarea className="mono" value={profileText} onChange={(e) => setProfileText(e.target.value)}
+              placeholder='{ "schemaVersion": 1, "id": "...", "name": "...", "sections": { … }, "expectations": { … } }' /></label>
+        </div>
+        <div className="capk-add-row">
+          <input type="file" accept="application/json,.json" onChange={onFile} />
+          <button className="btn" onClick={saveProfileJson} disabled={!profileText.trim()}>Doğrula ve Kaydet</button>
+        </div>
+        {profileResult && (
+          <p className={profileResult.ok ? 'capk-ok' : 'err-text'}>
+            {profileResult.ok
+              ? `✓ Kaydedildi: ${profileResult.id} — ${profileResult.sectionCount} bölüm · ${profileResult.tagCount} tag`
+              : `✗ ${(profileResult.errors || [profileResult.error]).join(' · ')}`}
+          </p>
+        )}
+      </div>
+    </details>
+  );
+}
+
 // Kart içeriği görünümü — SELECT/GPO/READ RECORD fazlarını TLV ağacı olarak göster.
 // Ecos çift kernel: hangi kernel yolunun çalıştığı + perso profiliyle karşılaştırma.
 const KERNEL_LABEL = { contact: 'Temaslı', k2: 'Temassız · Kernel 2', k8: 'Temassız · Kernel 8' };
@@ -115,6 +160,7 @@ function EcosReadResultView({ r }) {
           ))}
         </div>
       )}
+      {r.profileNote && <p className="oda-partial small" style={{ marginTop: 6 }}>○ {r.profileNote}</p>}
       {/* Perso profili karşılaştırması — bu kernel için beklenen alanlar */}
       {prof && (
         <details className="builder" style={{ marginTop: 8 }} open={prof.counts.differs > 0 || prof.counts.missing > 0}>
@@ -131,7 +177,10 @@ function EcosReadResultView({ r }) {
               </tr>
             ))}
           </tbody></table>
-          <p className="muted small" style={{ marginTop: 6 }}>Profil bir <b>referans şablondur</b>; fark mutlaka hata değildir — issuer perso'suna göre değişebilir (ör. CA anahtar indeksi, CVM listesi).</p>
+          <p className="muted small" style={{ marginTop: 6 }}>
+            Kaynak profil: <b>{prof.profileName || r.profileUsed?.name || '—'}</b> <span className="mono">{prof.profileId || r.profileUsed?.id || ''}</span>.
+            {prof.note ? ` ${prof.note}` : ' Profil bir referans şablondur; fark mutlaka hata değildir — issuer perso\'suna göre değişebilir.'}
+          </p>
         </details>
       )}
       <div className="tlv-phase"><h3 className="mono small" style={{ margin: '10px 0 4px' }}>▸ SELECT (FCI)</h3>
@@ -203,6 +252,7 @@ export function EcosTab({
   ecosOdaForm, setEcosOdaForm, runEcosOda, ecosOdaBusy, ecosOdaResult,
   ecosReadForm, setEcosReadForm, runEcosRead, ecosReadBusy, ecosReadResult,
   ecosTxForm, setEcosTxForm, runEcosTx, ecosTxBusy, ecosTxResult,
+  profiles, profileText, setProfileText, saveProfileJson, deleteProfileById, profileResult,
 }) {
   const aesKeys = sessionKeys.filter((k) => (k.keyType || '3des') !== '3des');
   const keySelect = (form, setForm) => (
@@ -314,12 +364,23 @@ export function EcosTab({
                 <option value="contact">Temaslı</option>
               </select>
             </label>
-            <label>AID<input className="mono" value={ecosReadForm.aid} onChange={(e) => setEcosReadForm({ ...ecosReadForm, aid: e.target.value })} placeholder="A0000000041010" /></label>
+            <label>AID<input className="mono" maxLength={32} value={ecosReadForm.aid} onChange={(e) => setEcosReadForm({ ...ecosReadForm, aid: e.target.value })} placeholder="A0000000041010" /></label>
             <button className="btn" disabled={ecosReadBusy || !cardPresent} onClick={runEcosRead}
               title={!cardPresent ? 'Okuyucuda kart yok' : undefined}>
               {ecosReadBusy ? 'Okunuyor…' : 'Kart İçeriğini Oku'}</button>
           </div>
+          {/* Profil seçimi ayrı satırda: okuma parametrelerinden (kernel/AID)
+              kavramsal olarak farklı — "hangi spec'e karşı karşılaştırılsın". */}
+          <div className="capk-add-row">
+            <label className="capk-wide">Perso profili — karşılaştırma referansı
+              <select value={ecosReadForm.profileId} onChange={(e) => setEcosReadForm({ ...ecosReadForm, profileId: e.target.value })}>
+                <option value="">Otomatik (AID'e göre eşleştir)</option>
+                {(profiles || []).map((p) => <option key={p.id} value={p.id}>{p.name} — {p.tagCount} tag{p.aid ? ` · AID ${p.aid}` : ''}</option>)}
+              </select>
+            </label>
+          </div>
         </div>
+        <ProfileManager {...{ profiles, profileText, setProfileText, saveProfileJson, deleteProfileById, profileResult }} />
         <EcosReadResultView r={ecosReadResult} />
 
         <div className="tlv-phase" style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 14 }}>

@@ -173,7 +173,11 @@ function App() {
   const [ecosOdaForm, setEcosOdaForm] = useState({ aid: 'A0000000041010', p9f2b: '0280' });
   const [ecosOdaBusy, setEcosOdaBusy] = useState(false);
   const [ecosOdaResult, setEcosOdaResult] = useState(null);
-  const [ecosReadForm, setEcosReadForm] = useState({ aid: 'A0000000041010', mode: 'auto' });
+  const [ecosReadForm, setEcosReadForm] = useState({ aid: 'A0000000041010', mode: 'auto', profileId: '' });
+  // Perso profilleri artık veri (backend profiles/*.json) — kod değil.
+  const [profiles, setProfiles] = useState([]);
+  const [profileText, setProfileText] = useState('');
+  const [profileResult, setProfileResult] = useState(null);
   const [ecosReadBusy, setEcosReadBusy] = useState(false);
   const [ecosReadResult, setEcosReadResult] = useState(null);
   const [ecosTxForm, setEcosTxForm] = useState({ keyLabel: '', keyPan: '', arc: '3030', differential: true });
@@ -399,7 +403,36 @@ function App() {
       setCapkSchemes(d.schemes || {});
     } catch { /* ignore */ }
   };
-  useEffect(() => { loadCapks(); loadEccCapks(); }, []);
+  const loadProfiles = async () => {
+    try {
+      const d = await (await fetch(`${API}/profiles`)).json();
+      setProfiles(d.profiles || []);
+    } catch { /* backend kapalıysa liste boş kalır */ }
+  };
+  // Yapıştırılan/yüklenen JSON'u doğrula ve kaydet.
+  const saveProfileJson = async () => {
+    setProfileResult(null);
+    let parsed;
+    try { parsed = JSON.parse(profileText); }
+    catch (e) { setProfileResult({ ok: false, errors: ['Geçersiz JSON: ' + e.message] }); return; }
+    try {
+      const d = await apiPost('/profiles/save', { profile: parsed });
+      setProfileResult(d);
+      if (d.ok) {
+        addTrace({ kind: 'ok', msg: `Perso profili kaydedildi: ${d.id} (${d.sectionCount} bölüm · ${d.tagCount} tag)` });
+        setProfileText(''); loadProfiles();
+      }
+    } catch (e) { setProfileResult({ ok: false, errors: [e.message] }); }
+  };
+  const deleteProfileById = async (id) => {
+    try {
+      const d = await apiPost('/profiles/delete', { id });
+      if (d.ok) { addTrace({ kind: 'ok', msg: `Perso profili silindi: ${id}` }); loadProfiles(); }
+      else setProfileResult(d);
+    } catch (e) { setProfileResult({ ok: false, errors: [e.message] }); }
+  };
+
+  useEffect(() => { loadCapks(); loadEccCapks(); loadProfiles(); }, []);
 
   const loadSessionKeys = async () => {
     try { const r = await fetch(`${API}/keys`); const d = await r.json(); setSessionKeys(d.keys || []); } catch { /* */ }
@@ -1411,6 +1444,8 @@ ${apps}
           ecosManForm={ecosManForm} setEcosManForm={setEcosManForm} runEcosManual={runEcosManual} ecosManBusy={ecosManBusy} ecosManResult={ecosManResult}
           ecosOdaForm={ecosOdaForm} setEcosOdaForm={setEcosOdaForm} runEcosOda={runEcosOda} ecosOdaBusy={ecosOdaBusy} ecosOdaResult={ecosOdaResult}
           ecosReadForm={ecosReadForm} setEcosReadForm={setEcosReadForm} runEcosRead={runEcosRead} ecosReadBusy={ecosReadBusy} ecosReadResult={ecosReadResult}
+          profiles={profiles} profileText={profileText} setProfileText={setProfileText}
+          saveProfileJson={saveProfileJson} deleteProfileById={deleteProfileById} profileResult={profileResult}
           ecosTxForm={ecosTxForm} setEcosTxForm={setEcosTxForm} runEcosTx={runEcosTx} ecosTxBusy={ecosTxBusy} ecosTxResult={ecosTxResult} />
       )}
 

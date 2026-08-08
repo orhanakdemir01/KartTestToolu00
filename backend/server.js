@@ -21,7 +21,10 @@ import { listKeysMasked, addKeySet, updateKeySet, deleteKeySet, getKeySet, findE
 import { deriveAcSessionKeyAes, deriveIccMasterKeyAes, buildEcosAcInput, ecosArqcAes, ecosArpcAes, parseEcosIad, verifyEcosArqcAes, bdhKdk, bdhSessionKeys, bdhDecrypt } from './cryptoaes.js';
 import { genEphemeralP256, ecdhSharedX, verifyEccCert, ecSdsaVerifyP256, decompressP256 } from './odaecc.js';
 import { findAllTags, parseAfl, parseTlv } from './emv.js';
-import { compareWithProfile, expectedAip, ECOS_PROFILE } from './ecosprofile.js';
+import {
+  listProfiles, getProfile, saveProfile, deleteProfile, validateProfile,
+  compareWithProfile, expectedAip,
+} from './profilestore.js';
 import { buildPinChange, buildUnblockVariants, buildVerifyPlaintext } from './changepin.js';
 import { discoverCardContext } from './carddiscover.js';
 import { extractCardImage } from './cardimage.js';
@@ -556,6 +559,39 @@ app.post('/api/ecos/contactless-oda', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message, steps }); }
 });
 
+// İstenen profil → yoksa AID'i eşleşen ilk profil → yoksa tek profil varsa o.
+// Hiçbiri yoksa null; karşılaştırma atlanır ama okuma çalışmaya devam eder.
+function pickProfile(wantedId, aid) {
+  if (wantedId) return getProfile(wantedId);
+  const all = listProfiles();
+  if (all.length === 0) return null;
+  const a = (aid || '').toUpperCase();
+  const byAid = all.find((p) => (p.aid || '').toUpperCase() === a);
+  return getProfile((byAid || all[0]).id);
+}
+
+// ── Perso profilleri (veri olarak; profiles/*.json) ─────────────────
+app.get('/api/profiles', (req, res) => {
+  if (req.query.id) {
+    const p = getProfile(req.query.id);
+    return p ? res.json({ profile: p }) : res.status(404).json({ error: 'Profil bulunamadı' });
+  }
+  const profiles = listProfiles();
+  res.json({ profiles, count: profiles.length });
+});
+
+app.post('/api/profiles/validate', (req, res) => res.json(validateProfile(req.body?.profile ?? req.body)));
+
+app.post('/api/profiles/save', (req, res) => {
+  const r = saveProfile(req.body?.profile ?? req.body);
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
+app.post('/api/profiles/delete', (req, res) => {
+  const r = deleteProfile(req.body?.id);
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
 // POST /api/ecos/read-card — Ecos kartın EMV veri yapısını KERNEL-FARKINDA oku.
 //
 // Ecos çift kernel'dir: temassızda hem Kernel 2 (mevcut PayPass POS'ları) hem
@@ -675,9 +711,16 @@ app.post('/api/ecos/read-card', async (req, res) => {
     walk(fciNodes); walk(gnodes); for (const r of out.records) walk(r.nodes);
     out.tagCount = flat.length;
     out.flatTags = flat;
-    out.profile = compareWithProfile(out.kernelUsed, flat);
-    const expAip = expectedAip(out.kernelUsed);
-    if (expAip) out.aipCheck = { expected: expAip, actual: aip || null, match: (aip || '').toUpperCase() === expAip.toUpperCase() };
+    // Profil seçimi: istek belirtmişse o, yoksa AID'i eşleşen ilk profil.
+    // Hiç profil yoksa karşılaştırma atlanır — okuma yine de çalışır.
+    const prof = pickProfile(req.body?.profileId, aid);
+    out.profileUsed = prof ? { id: prof.id, name: prof.name, source: prof.source || null } : null;
+    if (!prof) out.profileNote = 'Yüklü perso profili yok — karşılaştırma yapılamadı (Profiller sekmesinden yükleyin).';
+    if (prof) {
+      out.profile = compareWithProfile(prof, out.kernelUsed, flat);
+      const expAip = expectedAip(prof, out.kernelUsed);
+      if (expAip) out.aipCheck = { expected: expAip, actual: aip || null, match: (aip || '').toUpperCase() === expAip };
+    }
     out.steps = steps;
     res.json(out);
   } catch (err) { res.status(500).json({ error: err.message, steps }); }

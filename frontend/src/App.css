@@ -468,14 +468,42 @@ a:hover { color: #1a9850; text-decoration: underline; }
 .term-field.over input { border-color: #d97706; background: #fffdf7; }
 .term-field.over .term-label { color: #b45309; }
 .capk-add { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
-.capk-add-row { display: flex; gap: 10px; flex-wrap: wrap; }
+/* Satırdaki her öğe girdi tabanına hizalanır. align-items yokken butonlar
+   (etiketi olmadığı için) satır yüksekliği kadar gerilip girdilerden daha
+   uzun görünüyordu. */
+.capk-add-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+/* Buton kutu metrikleri girdiyle birebir aynı: 8px dikey dolgu + 1px kenarlık
+   + 13px yazı → aynı yükseklik, aynı taban çizgisi. */
+.capk-add-row > .btn,
+.capk-add-row > .btn-ghost { padding: 8px 16px; border: 1px solid transparent; font-size: 13px; line-height: 17px; align-self: flex-end; }
+.capk-add-row > .btn-ghost { border-color: #d9e0db; }
+/* Onay kutusu etiketi: .capk-add label'ın dikey/BÜYÜK HARF kalıbını devralınca
+   kutu metnin üstüne yığılıyordu — yatay ve girdiyle aynı yükseklikte olmalı. */
+.capk-add-row > .capk-check {
+  flex-direction: row; align-items: center; gap: 7px;
+  text-transform: none; font-size: 12px; color: #3d4650;
+  padding: 8px 0; line-height: 17px; border: 1px solid transparent;
+}
+.capk-add-row > .capk-check input { margin: 0; }
 .capk-add label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: #8b9199; text-transform: uppercase; }
 .capk-add input, .capk-add textarea { padding: 8px 10px; background: #f5f8f6; border: 1px solid #d9e0db; border-radius: 8px; color: #1f2733; font-size: 13px; font-family: inherit; }
 .capk-add input.mono, .capk-add textarea { font-family: 'IBM Plex Mono', monospace; }
 .capk-add .capk-wide { flex: 1; }
 .capk-add .capk-wide input, .capk-add .capk-wide textarea { width: 100%; }
 .capk-add textarea { min-height: 70px; resize: vertical; }
-.capk-add select { padding: 8px 10px; background: #f5f8f6; border: 1px solid #d9e0db; border-radius: 8px; color: #1f2733; font-size: 13px; font-family: inherit; }
+/* <select> line-height'ı yok sayar → yükseklik açıkça verilir (girdiyle aynı 35px).
+   max-width: uzun anahtar etiketleri satırı taşırıp butonu alt satıra itmesin. */
+.capk-add select { padding: 8px 10px; background: #f5f8f6; border: 1px solid #d9e0db; border-radius: 8px; color: #1f2733; font-size: 13px; font-family: inherit; height: 35px; max-width: 280px; }
+/* Kısa hex alanları içeriği kadar yer kaplasın: maxLength'i olmayan girdiler
+   tarayıcı varsayılanı (~20 karakter) kadar genişliyor; 4 karakterlik ARC'nin
+   186px kaplaması satırı taşırıp butonu alt satıra atıyordu. */
+.capk-add input[maxlength="2"] { width: 62px; }
+.capk-add input[maxlength="4"] { width: 86px; }
+.capk-add input[maxlength="6"] { width: 102px; }
+.capk-add input[maxlength="8"] { width: 118px; }
+.capk-add input[maxlength="10"] { width: 134px; }
+.capk-add input[maxlength="12"] { width: 152px; }
+.capk-add input[maxlength="16"] { width: 186px; }
 .capk-add input:focus, .capk-add textarea:focus, .capk-add select:focus { outline: none; border-color: #1a9850; }
 
 /* Oturum — kaydet + karşılaştır satırları (etiket üstte, alan tam genişlik, buton hizalı) */

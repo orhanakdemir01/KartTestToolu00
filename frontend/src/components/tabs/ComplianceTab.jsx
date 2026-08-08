@@ -229,6 +229,109 @@ function ComplianceResult({ res, label, busy, onRun, clear, present }) {
   );
 }
 
+// Referans ("altın") kart karşılaştırması — onaylı kartla üretim kartı aynı mı?
+// Kural motoru "EMV'ye uygun mu"yu, bu panel "onaylananla AYNI mı"yı yanıtlar.
+const REF_ST = {
+  match: { icon: '✓', cls: 'st-ok', label: 'aynı' },
+  differs: { icon: '✗', cls: 'st-bad', label: 'FARKLI' },
+  missing: { icon: '−', cls: 'st-bad', label: 'kartta yok' },
+  extra: { icon: '+', cls: 'st-warn', label: 'referansta yok' },
+  identity: { icon: '·', cls: 'st-extra', label: 'kimlik (atlandı)' },
+};
+function ReferencePanel({ references, refForm, setRefForm, captureReference, compareReference, deleteReference,
+  refBusy, refResult, contactPresent, contactlessPresent }) {
+  const anyCard = contactPresent || contactlessPresent;
+  const res = refResult;
+  const c = res && !res.error ? res.counts : null;
+  const [showAll, setShowAll] = useState(false);
+  const rows = res?.rows || [];
+  const defectRows = rows.filter((r) => ['differs', 'missing', 'extra'].includes(r.status));
+  const shown = showAll ? rows : defectRows;
+  return (
+    <details className="builder" style={{ marginTop: 12 }}>
+      <summary>Referans kart karşılaştırma ({references?.length || 0} referans)</summary>
+      <div className="capk-add">
+        <p className="muted small">Onaylı bir kartın <b>perso parmak izini</b> alıp üretim kartlarını ona karşı doğrular. Kural motoru <i>"EMV'ye uygun mu"</i>yu, bu panel <i>"onaylananla aynı mı"</i>yı yanıtlar. <b>Kimlik alanları</b> (PAN, kart sahibi, sertifikalar, sayaçlar) karttan karta değişir — karşılaştırmaya katılmaz ve <b>referans dosyasında saklanmaz</b>. Referansta bulunmayan bir alan kartta çıkarsa sessizce yok sayılmaz, <b>fazladan</b> olarak raporlanır.</p>
+        {references?.length > 0 && (
+          <table className="kv-table"><tbody>
+            {references.map((r) => (
+              <tr key={r.id}>
+                <td><b>{r.name}</b><br /><span className="mono small muted">{r.scheme || '?'} · {r.sourcePanMasked || '—'} · {r.iface || 'arayüz?'}</span></td>
+                <td className="small">{r.structuralCount} yapısal<br /><span className="muted">{r.identityCount} kimlik (saklanmadı)</span></td>
+                <td><button className="btn-ghost" onClick={() => deleteReference(r.id)}>Sil</button></td>
+              </tr>
+            ))}
+          </tbody></table>
+        )}
+        <div className="capk-add-row">
+          <label className="capk-wide">Yeni referans adı (okuyucudaki kart yakalanır)
+            <input value={refForm.name} onChange={(e) => setRefForm({ ...refForm, name: e.target.value })} placeholder="ör. Ecos onaylı referans — temaslı" /></label>
+          <label>Arayüz
+            <select value={refForm.iface} onChange={(e) => setRefForm({ ...refForm, iface: e.target.value })}>
+              <option value="contact">Temaslı</option><option value="contactless">Temassız</option>
+            </select>
+          </label>
+          <button className="btn" disabled={refBusy || !anyCard || !refForm.name.trim()} onClick={captureReference}
+            title={!anyCard ? 'Okuyucuda kart yok' : undefined}>{refBusy === 'capture' ? 'Yakalanıyor…' : 'Referans Yakala'}</button>
+        </div>
+        <div className="capk-add-row">
+          <label className="capk-wide">Karşılaştırılacak referans
+            <select value={refForm.refId} onChange={(e) => setRefForm({ ...refForm, refId: e.target.value })}>
+              <option value="">— seç —</option>
+              {(references || []).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+          </label>
+          <button className="btn" disabled={refBusy || !anyCard || !refForm.refId} onClick={compareReference}
+            title={!refForm.refId ? 'Referans seç' : !anyCard ? 'Okuyucuda kart yok' : undefined}>
+            {refBusy === 'compare' ? 'Kıyaslanıyor…' : 'Karttaki ile Kıyasla'}</button>
+        </div>
+
+        {res?.error && <p className="err-text">✗ {res.error}</p>}
+        {c && (
+          <div style={{ marginTop: 8 }}>
+            <VerdictBanner cls={res.verdict === 'PASS' ? 'pass' : 'fail'}
+              text={res.verdict === 'PASS' ? '✓ REFERANSLA AYNI' : `✗ ${res.defects} SAPMA`}
+              counts={[
+                { n: c.match, label: 'aynı', cls: 'c-ok' },
+                { n: c.differs, label: 'farklı', cls: 'c-bad' },
+                { n: c.missing, label: 'kartta yok', cls: 'c-bad' },
+                { n: c.extra, label: 'fazladan', cls: 'c-warn' },
+                { n: c.identity, label: 'kimlik', cls: 'c-na' },
+              ]} />
+            <div className="oda-info" style={{ marginTop: 6 }}>
+              <span className="muted small">Referans: <b>{res.referenceName}</b></span>
+              {rows.length > defectRows.length && (
+                <button className="btn-sm ghost" onClick={() => setShowAll(!showAll)}>
+                  {showAll ? 'yalnız sapmalar' : `tümünü göster (${rows.length})`}</button>
+              )}
+            </div>
+            {shown.length === 0 && <p className="capk-ok small">✓ Yapısal alanların tamamı referansla birebir aynı.</p>}
+            {shown.length > 0 && (
+              <table className="kv-table" style={{ marginTop: 6 }}>
+                <tbody>
+                  {shown.map((r) => (
+                    <tr key={r.tag}>
+                      <td><span className={REF_ST[r.status].cls}>{REF_ST[r.status].icon}</span> <span className="mono">{r.tag}</span>
+                        <br /><span className="small muted">{r.name || ''}</span></td>
+                      <td className="mono small">
+                        {r.status === 'identity' ? <span className="muted">kimlik alanı — kıyaslanmaz</span> : <>
+                          <span className="muted">ref :</span> {r.expected ?? '—'}<br />
+                          <span className="muted">kart:</span> {r.actual ?? '—'}
+                        </>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <p className="muted small" style={{ marginTop: 6 }}>{res.note}</p>
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
 // İzlenebilirlik matrisi — gereksinim → spec kaynağı → sonuç.
 // Sertifikasyon laboratuvarı raporlarının beklediği eksen; kural listesinden
 // farklı olarak "hangi belgeden kaç denetim çalıştı, ne oldu" sorusunu yanıtlar.
@@ -333,7 +436,8 @@ function RulePackManager({ packs, packText, setPackText, savePackJson, deletePac
 }
 
 export function ComplianceTab({ compContact, compContactless, compBusy, runComplianceCheck, clearCompliance, contactPresent, contactlessPresent,
-  packs, packText, setPackText, savePackJson, deletePackById, packResult, checkTypes }) {
+  packs, packText, setPackText, savePackJson, deletePackById, packResult, checkTypes,
+  references, refForm, setRefForm, captureReference, compareReference, deleteReference, refBusy, refResult }) {
   const packRules = (packs || []).reduce((a, p) => a + (p.ruleCount || 0), 0);
   return (
     <section className="panel">
@@ -343,6 +447,7 @@ export function ComplianceTab({ compContact, compContactless, compBusy, runCompl
       </div>
       <p className="muted small">Kartın perso verisini <b>makine-okunur gereksinimlere</b> karşı denetler: yapı, AFL/kayıt bütünlüğü, ODA tutarlılığı (AIP ↔ sertifika alanları), CVM, kullanım kontrolü ve <b>Mastercard CPV</b> şema kuralları. Her kural için ID · önem · PASS/FAIL · kanıt. Sonucu HTML rapor olarak dışa aktar.</p>
 
+      <ReferencePanel {...{ references, refForm, setRefForm, captureReference, compareReference, deleteReference, refBusy, refResult, contactPresent, contactlessPresent }} />
       <RulePackManager {...{ packs, packText, setPackText, savePackJson, deletePackById, packResult, checkTypes }} />
 
       {compContact?.compliance && compContactless?.compliance &&

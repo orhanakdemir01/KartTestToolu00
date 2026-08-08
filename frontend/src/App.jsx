@@ -182,6 +182,10 @@ function App() {
   const [packText, setPackText] = useState('');
   const [packResult, setPackResult] = useState(null);
   const [checkTypes, setCheckTypes] = useState({});
+  const [references, setReferences] = useState([]);
+  const [refForm, setRefForm] = useState({ name: '', iface: 'contact', refId: '' });
+  const [refBusy, setRefBusy] = useState(null); // 'capture' | 'compare' | null
+  const [refResult, setRefResult] = useState(null);
   const [ecosReadBusy, setEcosReadBusy] = useState(false);
   const [ecosReadResult, setEcosReadResult] = useState(null);
   const [ecosTxForm, setEcosTxForm] = useState({ keyLabel: '', keyPan: '', arc: '3030', differential: true });
@@ -407,6 +411,49 @@ function App() {
       setCapkSchemes(d.schemes || {});
     } catch { /* ignore */ }
   };
+  // Referans ("altın") kartlar — onaylı kartın parmak izi, üretim kartı kıyası.
+  // Okuyucu seçimi: form'daki arayüz tercihi hangi okuyucuya bakılacağını belirler.
+  const readerForIface = (iface) => {
+    const s = readerStatus.find((x) => x.present && (iface === 'contactless' ? x.contactless : !x.contactless));
+    return s?.reader || selectedReader || undefined;
+  };
+  const loadReferences = async () => {
+    try {
+      const d = await (await fetch(`${API}/reference`)).json();
+      setReferences(d.references || []);
+    } catch { /* backend kapalıysa liste boş kalır */ }
+  };
+  const captureReference = async () => {
+    setRefBusy('capture'); setRefResult(null);
+    try {
+      const d = await apiPost('/reference/capture', { reader: readerForIface(refForm.iface), iface: refForm.iface, name: refForm.name.trim() });
+      if (d.ok) {
+        addTrace({ kind: 'ok', msg: `Referans kart yakalandı: ${d.reference.id} — ${d.structuralCount} yapısal alan (${d.identityCount} kimlik alanı saklanmadı)` });
+        setRefForm({ ...refForm, name: '', refId: d.reference.id });
+        loadReferences();
+      } else setRefResult({ error: d.error || (d.errors || []).join(' · ') });
+    } catch (e) { setRefResult({ error: e.message }); }
+    setRefBusy(null);
+  };
+  const compareReference = async () => {
+    setRefBusy('compare'); setRefResult(null);
+    try {
+      const d = await apiPost('/reference/compare', { reader: readerForIface(refForm.iface), refId: refForm.refId });
+      setRefResult(d);
+      if (d.error) addTrace({ kind: 'error', msg: `Referans kıyas: ${d.error}` });
+      else addTrace({ kind: d.verdict === 'PASS' ? 'ok' : 'warn',
+        msg: `Referans kıyas ${d.verdict} · ${d.counts.match} aynı · ${d.defects} sapma (${d.counts.differs} farklı, ${d.counts.missing} eksik, ${d.counts.extra} fazladan)` });
+    } catch (e) { setRefResult({ error: e.message }); }
+    setRefBusy(null);
+  };
+  const deleteReferenceById = async (id) => {
+    try {
+      const d = await apiPost('/reference/delete', { id });
+      if (d.ok) { addTrace({ kind: 'ok', msg: `Referans silindi: ${id}` }); loadReferences(); }
+      else setRefResult({ error: d.error });
+    } catch (e) { setRefResult({ error: e.message }); }
+  };
+
   // Kural paketleri — uyumluluk kuralları veri olarak (backend rulepacks/*.json).
   const loadPacks = async () => {
     try {
@@ -462,7 +509,7 @@ function App() {
     } catch (e) { setProfileResult({ ok: false, errors: [e.message] }); }
   };
 
-  useEffect(() => { loadCapks(); loadEccCapks(); loadProfiles(); loadPacks(); }, []);
+  useEffect(() => { loadCapks(); loadEccCapks(); loadProfiles(); loadPacks(); loadReferences(); }, []);
 
   const loadSessionKeys = async () => {
     try { const r = await fetch(`${API}/keys`); const d = await r.json(); setSessionKeys(d.keys || []); } catch { /* */ }
@@ -1509,7 +1556,10 @@ ${apps}
           runComplianceCheck={runComplianceCheck} clearCompliance={clearCompliance}
           contactPresent={ifaceHasCard('contact')} contactlessPresent={ifaceHasCard('contactless')}
           packs={packs} packText={packText} setPackText={setPackText} savePackJson={savePackJson}
-          deletePackById={deletePackById} packResult={packResult} checkTypes={checkTypes} />
+          deletePackById={deletePackById} packResult={packResult} checkTypes={checkTypes}
+          references={references} refForm={refForm} setRefForm={setRefForm}
+          captureReference={captureReference} compareReference={compareReference}
+          deleteReference={deleteReferenceById} refBusy={refBusy} refResult={refResult} />
       )}
 
       {activeTab === 'profilepdf' && (

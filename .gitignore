@@ -11,6 +11,9 @@ backups/
 # Kaydedilen test oturumları + uyumluluk geçmişi (kullanıcı verisi, kaynak değil)
 backend/sessions/
 backend/history/
+# Yakalanan referans ("altın") kart parmak izleri — sahadaki karttan üretilir,
+# ürün tanımı değil. (Karşıt örnek: profiles/ ve rulepacks/ ürünle gelir → izlenir.)
+backend/references/
 
 # Logs / temp
 *.log

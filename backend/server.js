@@ -27,6 +27,10 @@ import {
 } from './profilestore.js';
 import { listPacks, getPack, savePack, deletePack, validatePack, CHECK_TYPES } from './rulepacks.js';
 import { buildTraceability } from './traceability.js';
+import {
+  buildFingerprint, compareToReference, listReferences, getReference,
+  saveReference, deleteReference,
+} from './refcards.js';
 import { buildPinChange, buildUnblockVariants, buildVerifyPlaintext } from './changepin.js';
 import { discoverCardContext } from './carddiscover.js';
 import { extractCardImage } from './cardimage.js';
@@ -594,6 +598,56 @@ app.post('/api/profiles/save', (req, res) => {
 
 app.post('/api/profiles/delete', (req, res) => {
   const r = deleteProfile(req.body?.id);
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
+// ── Referans ("altın") kartlar — references/*.json ──────────────────
+// Onaylı kartın parmak izini al, üretim kartlarını ona karşı doğrula.
+app.get('/api/reference', (req, res) => {
+  if (req.query.id) {
+    const r = getReference(req.query.id);
+    return r ? res.json({ reference: r }) : res.status(404).json({ error: 'Referans bulunamadı' });
+  }
+  const references = listReferences();
+  res.json({ references, count: references.length });
+});
+
+// Okuyucudaki kartı REFERANS olarak yakala.
+app.post('/api/reference/capture', async (req, res) => {
+  const preferReader = req.body?.reader || undefined;
+  if (!usingRealReader() || !pcsc.getActiveCard(preferReader)?.connected) {
+    return res.status(404).json({ error: 'Okuyucuda kart yok' });
+  }
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Referans adı zorunlu' });
+  try {
+    const image = await extractCardImage(preferReader, { maxSfi: req.body?.maxSfi });
+    const fp = buildFingerprint(image, { name, iface: req.body?.iface || null });
+    fp.capturedAt = new Date().toISOString();
+    const r = saveReference(fp);
+    if (!r.ok) return res.status(400).json(r);
+    res.json({ ok: true, reference: { ...fp, tags: undefined }, structuralCount: r.structuralCount, identityCount: fp.identityPresent.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Okuyucudaki kartı seçilen referansa karşı kıyasla.
+app.post('/api/reference/compare', async (req, res) => {
+  const preferReader = req.body?.reader || undefined;
+  if (!usingRealReader() || !pcsc.getActiveCard(preferReader)?.connected) {
+    return res.status(404).json({ error: 'Okuyucuda kart yok' });
+  }
+  const ref = getReference(req.body?.refId);
+  if (!ref) return res.status(404).json({ error: 'Referans bulunamadı' });
+  try {
+    const image = await extractCardImage(preferReader, { maxSfi: req.body?.maxSfi });
+    const cmp = compareToReference(ref, image);
+    const app0 = image?.applications?.[0] || {};
+    res.json({ ...cmp, card: { scheme: app0.scheme || null, aid: app0.aid || null, tagCount: (app0.tags || []).length }, timestamp: new Date().toISOString() });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/reference/delete', (req, res) => {
+  const r = deleteReference(req.body?.id);
   res.status(r.ok ? 200 : 400).json(r);
 });
 

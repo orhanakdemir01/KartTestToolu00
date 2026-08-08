@@ -178,6 +178,10 @@ function App() {
   const [profiles, setProfiles] = useState([]);
   const [profileText, setProfileText] = useState('');
   const [profileResult, setProfileResult] = useState(null);
+  const [packs, setPacks] = useState([]);
+  const [packText, setPackText] = useState('');
+  const [packResult, setPackResult] = useState(null);
+  const [checkTypes, setCheckTypes] = useState({});
   const [ecosReadBusy, setEcosReadBusy] = useState(false);
   const [ecosReadResult, setEcosReadResult] = useState(null);
   const [ecosTxForm, setEcosTxForm] = useState({ keyLabel: '', keyPan: '', arc: '3030', differential: true });
@@ -403,6 +407,32 @@ function App() {
       setCapkSchemes(d.schemes || {});
     } catch { /* ignore */ }
   };
+  // Kural paketleri — uyumluluk kuralları veri olarak (backend rulepacks/*.json).
+  const loadPacks = async () => {
+    try {
+      const d = await (await fetch(`${API}/rulepacks`)).json();
+      setPacks(d.packs || []); setCheckTypes(d.checkTypes || {});
+    } catch { /* backend kapalıysa liste boş kalır */ }
+  };
+  const savePackJson = async () => {
+    setPackResult(null);
+    let parsed;
+    try { parsed = JSON.parse(packText); }
+    catch (e) { setPackResult({ ok: false, errors: ['Geçersiz JSON: ' + e.message] }); return; }
+    try {
+      const d = await apiPost('/rulepacks/save', { pack: parsed });
+      setPackResult(d);
+      if (d.ok) { addTrace({ kind: 'ok', msg: `Kural paketi kaydedildi: ${d.id} (${d.ruleCount} kural)` }); setPackText(''); loadPacks(); }
+    } catch (e) { setPackResult({ ok: false, errors: [e.message] }); }
+  };
+  const deletePackById = async (id) => {
+    try {
+      const d = await apiPost('/rulepacks/delete', { id });
+      if (d.ok) { addTrace({ kind: 'ok', msg: `Kural paketi silindi: ${id}` }); loadPacks(); }
+      else setPackResult(d);
+    } catch (e) { setPackResult({ ok: false, errors: [e.message] }); }
+  };
+
   const loadProfiles = async () => {
     try {
       const d = await (await fetch(`${API}/profiles`)).json();
@@ -432,7 +462,7 @@ function App() {
     } catch (e) { setProfileResult({ ok: false, errors: [e.message] }); }
   };
 
-  useEffect(() => { loadCapks(); loadEccCapks(); loadProfiles(); }, []);
+  useEffect(() => { loadCapks(); loadEccCapks(); loadProfiles(); loadPacks(); }, []);
 
   const loadSessionKeys = async () => {
     try { const r = await fetch(`${API}/keys`); const d = await r.json(); setSessionKeys(d.keys || []); } catch { /* */ }
@@ -1477,7 +1507,9 @@ ${apps}
       {activeTab === 'compliance' && (
         <ComplianceTab compContact={compContact} compContactless={compContactless} compBusy={compBusy}
           runComplianceCheck={runComplianceCheck} clearCompliance={clearCompliance}
-          contactPresent={ifaceHasCard('contact')} contactlessPresent={ifaceHasCard('contactless')} />
+          contactPresent={ifaceHasCard('contact')} contactlessPresent={ifaceHasCard('contactless')}
+          packs={packs} packText={packText} setPackText={setPackText} savePackJson={savePackJson}
+          deletePackById={deletePackById} packResult={packResult} checkTypes={checkTypes} />
       )}
 
       {activeTab === 'profilepdf' && (

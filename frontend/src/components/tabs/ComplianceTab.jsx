@@ -227,14 +227,65 @@ function ComplianceResult({ res, label, busy, onRun, clear, present }) {
   );
 }
 
-export function ComplianceTab({ compContact, compContactless, compBusy, runComplianceCheck, clearCompliance, contactPresent, contactlessPresent }) {
+// Kural paketi yöneticisi — kurallar VERİDİR (backend rulepacks/*.json).
+// Yerleşik kurallar (keyfi JS) aynen çalışır; paketler onların ÜSTÜNE eklenir.
+// Paketten keyfi kod çalıştırılmaz: yalnızca sabit bir kontrol sözlüğü yorumlanır.
+function RulePackManager({ packs, packText, setPackText, savePackJson, deletePackById, packResult, checkTypes }) {
+  // Eksik prop tüm sekmeyi çökertmesin: kontrollü alanlar her zaman string alır.
+  const text = packText ?? '';
+  const onFile = async (e) => {
+    const f = e.target.files?.[0];
+    if (f) setPackText(await f.text());
+    e.target.value = '';
+  };
+  return (
+    <details className="builder" style={{ marginTop: 12 }}>
+      <summary>Kural paketlerini yönet ({packs?.length || 0})</summary>
+      <div className="capk-add">
+        <p className="muted small">Kural paketi bir <b>JSON dosyasıdır</b> — motor sabit, kurallar dışarıdan gelir. Kurum/issuer'a özgü gereksinimler (ülke, para birimi, sürüm, CVM taban çizgisi) kod değişikliği olmadan sürümlenebilir. Paketten <b>keyfi kod çalıştırılmaz</b>; yalnızca şu kontrol tipleri yorumlanır: <span className="mono">{Object.keys(checkTypes || {}).join(' · ')}</span>. Kaydetmeden önce yapısal olarak doğrulanır.</p>
+        {packs?.length > 0 && (
+          <table className="kv-table"><tbody>
+            {packs.map((p) => (
+              <tr key={p.id}>
+                <td><b>{p.name}</b><br /><span className="mono small muted">{p.id}{p.scheme ? ` · ${p.scheme}` : ''}</span></td>
+                <td className="small">{p.ruleCount} kural{p.spec ? <><br /><span className="muted">{p.spec}</span></> : null}</td>
+                <td><button className="btn-ghost" onClick={() => deletePackById(p.id)}>Sil</button></td>
+              </tr>
+            ))}
+          </tbody></table>
+        )}
+        <div className="capk-add-row">
+          <label className="capk-wide">Kural paketi JSON (dosyadan yükle veya yapıştır)
+            <textarea className="mono" value={text} onChange={(e) => setPackText(e.target.value)}
+              placeholder='{ "schemaVersion": 1, "id": "...", "name": "...", "rules": [ { "id": "...", "cat": "...", "sev": "M", "req": "...", "check": { "type": "equals", "tag": "5F28", "value": "0792" } } ] }' /></label>
+        </div>
+        <div className="capk-add-row">
+          <input type="file" accept="application/json,.json" onChange={onFile} />
+          <button className="btn" onClick={savePackJson} disabled={!text.trim()}>Doğrula ve Kaydet</button>
+        </div>
+        {packResult && (
+          <p className={packResult.ok ? 'capk-ok' : 'err-text'}>
+            {packResult.ok ? `✓ Kaydedildi: ${packResult.id} — ${packResult.ruleCount} kural`
+              : `✗ ${(packResult.errors || [packResult.error]).join(' · ')}`}
+          </p>
+        )}
+      </div>
+    </details>
+  );
+}
+
+export function ComplianceTab({ compContact, compContactless, compBusy, runComplianceCheck, clearCompliance, contactPresent, contactlessPresent,
+  packs, packText, setPackText, savePackJson, deletePackById, packResult, checkTypes }) {
+  const packRules = (packs || []).reduce((a, p) => a + (p.ruleCount || 0), 0);
   return (
     <section className="panel">
       <div className="panel-head">
         <h2>Perso Uyumluluk / Sertifikasyon</h2>
-        <span className="muted small">EMV çekirdek + Mastercard CPV · kural motoru</span>
+        <span className="muted small">EMV çekirdek + şema kuralları{packRules ? ` + ${packRules} paket kuralı` : ''}</span>
       </div>
       <p className="muted small">Kartın perso verisini <b>makine-okunur gereksinimlere</b> karşı denetler: yapı, AFL/kayıt bütünlüğü, ODA tutarlılığı (AIP ↔ sertifika alanları), CVM, kullanım kontrolü ve <b>Mastercard CPV</b> şema kuralları. Her kural için ID · önem · PASS/FAIL · kanıt. Sonucu HTML rapor olarak dışa aktar.</p>
+
+      <RulePackManager {...{ packs, packText, setPackText, savePackJson, deletePackById, packResult, checkTypes }} />
 
       {compContact?.compliance && compContactless?.compliance &&
         <MatrixView contact={compContact.compliance} contactless={compContactless.compliance} />}

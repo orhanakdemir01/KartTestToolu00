@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "id": "tr-issuer-baseline",
+  "name": "TR issuer temel perso kuralları",
+  "spec": "Issuer perso spesifikasyonu (kuruma özgü)",
+  "description": "Türkiye'de ihraç edilen kartlar için kurum-içi perso taban çizgisi. Bunlar EMV zorunlulukları DEĞİL, issuer'ın kendi kararlarıdır (ülke/para birimi/sürüm) — bu yüzden koda gömülmez, paket olarak sürümlenir. Kendi kurumunuz için kopyalayıp değerleri değiştirin.",
+  "rules": [
+    {
+      "id": "TRB-01",
+      "cat": "Issuer Taban Çizgisi",
+      "sev": "M",
+      "req": "Issuer Country Code (5F28) = 0792 (Türkiye)",
+      "spec": "ISO 3166-1 · issuer perso kararı",
+      "check": { "type": "equals", "tag": "5F28", "value": "0792" }
+    },
+    {
+      "id": "TRB-02",
+      "cat": "Issuer Taban Çizgisi",
+      "sev": "M",
+      "req": "Application Currency Code (9F42) = 0949 (TRY)",
+      "spec": "ISO 4217 · issuer perso kararı",
+      "when": { "tagPresent": "9F42" },
+      "check": { "type": "equals", "tag": "9F42", "value": "0949" }
+    },
+    {
+      "id": "TRB-03",
+      "cat": "Issuer Taban Çizgisi",
+      "sev": "R",
+      "req": "Application Version Number (9F08) = 0002 (Mastercard markalı ürün)",
+      "when": { "tagPresent": "9F08" },
+      "check": { "type": "equals", "tag": "9F08", "value": "0002" }
+    },
+    {
+      "id": "TRB-04",
+      "cat": "Issuer Taban Çizgisi",
+      "sev": "R",
+      "req": "Application Usage Control (9F07) nakit/mal/hizmet + cashback açık (FFC0)",
+      "when": { "tagPresent": "9F07" },
+      "check": { "type": "oneOf", "tag": "9F07", "values": ["FFC0", "FF00"] }
+    },
+    {
+      "id": "TRB-05",
+      "cat": "Issuer Taban Çizgisi",
+      "sev": "M",
+      "req": "Application Expiry Date (5F24) YYMMDD biçiminde",
+      "check": { "type": "format", "tag": "5F24", "pattern": "^[0-9]{6}$", "desc": "6 haneli YYMMDD olmalı" }
+    },
+    {
+      "id": "TRB-06",
+      "cat": "Issuer Taban Çizgisi",
+      "sev": "M",
+      "req": "CVM List (8E) en az 8 bayt (X/Y tutarları + en az bir CVM kuralı)",
+      "when": { "tagPresent": "8E" },
+      "check": { "type": "lengthBytes", "tag": "8E", "min": 10 }
+    },
+    {
+      "id": "TRB-07",
+      "cat": "Issuer Taban Çizgisi",
+      "sev": "C",
+      "req": "CDA destekleniyorsa ICC PK sertifikası (9F46) mevcut",
+      "spec": "EMV Bk3 Ann. C1 (AIP) + Bk2 §6.4",
+      "check": { "type": "requiredIfAipBit", "byte": 1, "mask": "0x01", "tags": ["9F46"] }
+    },
+    {
+      "id": "TRB-08",
+      "cat": "Issuer Taban Çizgisi",
+      "sev": "R",
+      "req": "Issuer Action Code'lar (9F0D/9F0E/9F0F) tanımlı",
+      "check": { "type": "presentAll", "tags": ["9F0D", "9F0E", "9F0F"] }
+    }
+  ]
+}

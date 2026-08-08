@@ -5,6 +5,7 @@
 // top of raw data acquisition. Rules are pure functions over a card image, so
 // they are deterministic and auditable.
 import { luhnCheck, parseTrack2, parseAfl, countryName, currencyName, parseDol } from './emv.js';
+import { evaluatePacks } from './rulepacks.js';
 
 const clean = (s) => (s || '').replace(/\s/g, '').toUpperCase();
 
@@ -515,6 +516,12 @@ export function runCompliance(image, iface, crypto) {
     try { r = rule.run(ctx); } catch (e) { r = FAIL('—', 'Kural hatası: ' + e.message); }
     results.push({ id: rule.id, cat: rule.cat, req: rule.req, sev: rule.sev, spec: rule.spec || CAT_SPEC[rule.cat] || null, ...r, evidence: r.evidence ?? null, detail: r.detail ?? null });
   }
+  // Yüklü kural paketleri (rulepacks/*.json) yerleşik kuralların ÜSTÜNE eklenir.
+  // Paket hatası tüm uyumluluk koşusunu düşürmesin — izole edilir.
+  let packResults = [];
+  try { packResults = evaluatePacks(ctx); }
+  catch (e) { packResults = [{ id: 'PACK-ERR', cat: 'Kural Paketleri', req: 'Kural paketleri yüklendi', sev: 'R', status: 'warn', evidence: '—', detail: 'Paket motoru hatası: ' + e.message }]; }
+  results.push(...packResults);
   // Group by category (stable order of first appearance).
   const cats = [];
   const byCat = new Map();

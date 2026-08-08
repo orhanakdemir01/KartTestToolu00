@@ -25,6 +25,7 @@ import {
   listProfiles, getProfile, saveProfile, deleteProfile, validateProfile,
   compareWithProfile, expectedAip,
 } from './profilestore.js';
+import { listPacks, getPack, savePack, deletePack, validatePack, CHECK_TYPES } from './rulepacks.js';
 import { buildPinChange, buildUnblockVariants, buildVerifyPlaintext } from './changepin.js';
 import { discoverCardContext } from './carddiscover.js';
 import { extractCardImage } from './cardimage.js';
@@ -589,6 +590,28 @@ app.post('/api/profiles/save', (req, res) => {
 
 app.post('/api/profiles/delete', (req, res) => {
   const r = deleteProfile(req.body?.id);
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
+// ── Kural paketleri (veri olarak; rulepacks/*.json) ─────────────────
+app.get('/api/rulepacks', (req, res) => {
+  if (req.query.id) {
+    const p = getPack(req.query.id);
+    return p ? res.json({ pack: p }) : res.status(404).json({ error: 'Paket bulunamadı' });
+  }
+  const packs = listPacks();
+  res.json({ packs, count: packs.length, checkTypes: CHECK_TYPES });
+});
+
+app.post('/api/rulepacks/validate', (req, res) => res.json(validatePack(req.body?.pack ?? req.body)));
+
+app.post('/api/rulepacks/save', (req, res) => {
+  const r = savePack(req.body?.pack ?? req.body);
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
+app.post('/api/rulepacks/delete', (req, res) => {
+  const r = deletePack(req.body?.id);
   res.status(r.ok ? 200 : 400).json(r);
 });
 

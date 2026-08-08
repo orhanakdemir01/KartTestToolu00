@@ -12,6 +12,10 @@ import { runEmvRead, runEmvFlow } from './emvflow.js';
 import { interpretUid } from './emv.js';
 import { BUILTIN_SUITES, swMatch } from './testsuites.js';
 import { listKeys, keysForRid, findKey, schemes, verifyKey, addKey, updateKey, deleteKey } from './capk.js';
+import {
+  listKeys as listEccCaKeys, findKey as findEccCaKey, verifyKey as verifyEccCaKey,
+  addKey as addEccCaKey, updateKey as updateEccCaKey, deleteKey as deleteEccCaKey,
+} from './capkecc.js';
 import { computeArpc, computeArpcMethod2, deriveIccMasterKey, verifyArqcAuto } from './crypto3des.js';
 import { listKeysMasked, addKeySet, updateKeySet, deleteKeySet, getKeySet, findExact } from './sessionkeys.js';
 import { deriveAcSessionKeyAes, deriveIccMasterKeyAes, buildEcosAcInput, ecosArqcAes, ecosArpcAes, parseEcosIad, verifyEcosArqcAes, bdhKdk, bdhSessionKeys, bdhDecrypt } from './cryptoaes.js';
@@ -525,11 +529,14 @@ app.post('/api/ecos/contactless-oda', async (req, res) => {
     const pan = clean0(findTag(allNodes, '5A')?.value) || clean0(findTag(allNodes, '57')?.value).split('D')[0];
     out.pan = pan;
     out.certs = { caIndex, issuerCert, cardCert };
-    // ── CA ECC PK (RID+index) — şimdilik log'daki test CA'sı; sonra depoya bağlanacak ──
-    const CA_ECC = { 'A000000004:E0': { x: 'F60DAECD42B48FCCA547D942204D6098F1A353A5CD25CBDF2EC1ABFD0170E0FC', y: '6FD75EAAB356BE98BAA8E99A6FCE303F0C952BC02B4F566F096DD6EFF20C8FE8' } };
+    // ── CA ECC PK — depodan (RID + kartın 8F index'i); şema: C-8 Tablo 4.3 ──
     const rid = aid.slice(0, 10);
-    const ca = CA_ECC[`${rid}:${caIndex}`];
+    const ca = findEccCaKey(rid, caIndex);
     const chain = { ca: !!ca };
+    out.caKey = ca
+      ? { rid: ca.rid, index: ca.index, scheme: ca.scheme, suite: ca.suite, curve: ca.curve, keyType: ca.keyType }
+      : null;
+    if (!ca) chain.caError = `ECC CA anahtarı yok: RID ${rid} index ${caIndex || '?'} — "CA Anahtarları" sekmesinden ekleyin`;
     if (ca && issuerCert) {
       const iv = verifyEccCert(issuerCert, ca.x);
       chain.issuer = iv.ok;
@@ -772,6 +779,31 @@ app.post('/api/capk/update', (req, res) => {
 app.post('/api/capk/delete', (req, res) => {
   const r = deleteKey(req.body?.rid, req.body?.index);
   res.status(r.deleted ? 200 : 400).json(r);
+});
+
+// ── ECC CA Public Keys (Kernel 8 · C-8 Tablo 4.3) ───────────────────
+// RSA CAPK'den ayrı depo: ECC anahtarı eğri üzerinde bir NOKTA (x,y) ve
+// Algorithm Suite Indicator taşır — modulus/exponent şemasına sığmaz.
+app.get('/api/capk-ecc', (req, res) => {
+  const keys = listEccCaKeys();
+  res.json({ keys, count: keys.length });
+});
+
+app.post('/api/capk-ecc/verify', (req, res) => res.json(verifyEccCaKey(req.body || {})));
+
+app.post('/api/capk-ecc/add', (req, res) => {
+  const r = addEccCaKey(req.body || {});
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
+app.post('/api/capk-ecc/update', (req, res) => {
+  const r = updateEccCaKey(req.body || {});
+  res.status(r.ok ? 200 : 400).json(r);
+});
+
+app.post('/api/capk-ecc/delete', (req, res) => {
+  const r = deleteEccCaKey(req.body?.rid, req.body?.index);
+  res.status(r.ok ? 200 : 400).json(r);
 });
 
 // ── Session/Issuer 3DES keys (AC / MAC / ENC) ───────────────────────

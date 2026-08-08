@@ -4,6 +4,7 @@ export function CapkTab({
   capks, capkSchemes, capkFilter, setCapkFilter,
   addForm, setAddForm, addCapk, addResult,
   capkEdit, startEditCapk, cancelEditCapk, updateCapk, deleteCapk,
+  eccCapks, eccAddForm, setEccAddForm, addEccCapk, deleteEccCapk, eccAddResult,
 }) {
   const editing = !!capkEdit;
   const set = (patch) => setAddForm({ ...addForm, ...patch });
@@ -74,6 +75,74 @@ export function CapkTab({
           )}
         </div>
       </details>
+      <EccCapkPanel {...{ eccCapks, eccAddForm, setEccAddForm, addEccCapk, deleteEccCapk, eccAddResult }} />
     </section>
+  );
+}
+
+// ECC CA public key deposu — Kernel 8 ECC ODA'nın zincir kökü.
+// Şema: [EMV Book C-8 v1.2] Tablo 4.3. RSA'daki modulus+exponent yerine eğri
+// üzerinde bir NOKTA (x,y) + Algorithm Suite Indicator tutulur.
+function EccCapkPanel({ eccCapks, eccAddForm, setEccAddForm, addEccCapk, deleteEccCapk, eccAddResult }) {
+  const set = (patch) => setEccAddForm({ ...eccAddForm, ...patch });
+  return (
+    <div style={{ marginTop: 22, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+      <div className="panel-head"><h2>ECC CA Public Keys ({eccCapks?.length || 0}) · Kernel 8</h2></div>
+      <p className="muted small">Kernel 8 (ECC) çevrimdışı veri doğrulamasının <b>zincir kökü</b>. RSA CAPK'den ayrı depo: ECC anahtarı eğri üzerinde bir <b>nokta (x, y)</b> ve <b>Algorithm Suite Indicator</b> taşır — spec <span className="mono">[C-8 Tablo 4.3]</span> y'nin de saklanmasını önerir ki her işlemde yeniden hesaplanmasın. Eklerken nokta <b>P-256 eğrisi üzerinde mi</b> diye sınanır; checksum verilirse SHA-256/SHA-1 ile doğrulanır, verilmezse hesaplanır.</p>
+      {(!eccCapks || eccCapks.length === 0) && <p className="err-text small">⚠ ECC CA anahtarı yok — Kernel 8 ODA zinciri doğrulanamaz.</p>}
+      {eccCapks?.length > 0 && (
+        <div className="capk-scroll">
+          <table className="capk-table">
+            <thead><tr><th>Şema</th><th>RID</th><th>Index</th><th>Suite</th><th>Eğri</th><th>Tip</th><th>Checksum</th><th></th></tr></thead>
+            <tbody>
+              {eccCapks.map((k, i) => (
+                <tr key={i}>
+                  <td>{k.scheme}</td>
+                  <td className="mono small">{k.rid}</td>
+                  <td className="mono">{k.index}</td>
+                  <td className="mono small">{k.suite}</td>
+                  <td className="small">{k.curve}</td>
+                  <td><span className={`kcv-tag ${k.keyType === 'Live' ? '' : 'aes'}`}>{k.keyType}</span></td>
+                  <td className="mono small muted" title={k.hash}>{(k.hash || '').slice(0, 16)}…</td>
+                  <td><button className="btn-ghost" onClick={() => deleteEccCapk(k)}>Sil</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <details className="builder" style={{ marginTop: 10 }}>
+        <summary>ECC CA anahtarı ekle</summary>
+        <div className="capk-add">
+          <div className="capk-add-row">
+            <label>Şema<input value={eccAddForm.scheme} onChange={(e) => set({ scheme: e.target.value })} placeholder="Mastercard" /></label>
+            <label>RID<input className="mono" maxLength={10} value={eccAddForm.rid} onChange={(e) => set({ rid: e.target.value })} placeholder="A000000004" /></label>
+            <label>Index (kartın 8F)<input className="mono" maxLength={2} value={eccAddForm.index} onChange={(e) => set({ index: e.target.value })} placeholder="E0" /></label>
+            <label>Suite<input className="mono" maxLength={2} value={eccAddForm.suite} onChange={(e) => set({ suite: e.target.value })} placeholder="10" title="Algorithm Suite Indicator — bu spec sürümünde daima 10" /></label>
+            <label>Tip
+              <select value={eccAddForm.keyType} onChange={(e) => set({ keyType: e.target.value })}>
+                <option value="Test">Test</option><option value="Live">Live</option>
+              </select>
+            </label>
+          </div>
+          <div className="capk-add-row">
+            <label className="capk-wide">Public key X (32 bayt)<input className="mono" value={eccAddForm.x} onChange={(e) => set({ x: e.target.value })} placeholder="64 hex karakter" /></label>
+          </div>
+          <div className="capk-add-row">
+            <label className="capk-wide">Public key Y (32 bayt)<input className="mono" value={eccAddForm.y} onChange={(e) => set({ y: e.target.value })} placeholder="64 hex karakter" /></label>
+          </div>
+          <div className="capk-add-row">
+            <label className="capk-wide">Checksum (ops. — boşsa SHA-256 hesaplanır)<input className="mono" value={eccAddForm.hash} onChange={(e) => set({ hash: e.target.value })} placeholder="SHA-256 veya SHA-1" /></label>
+            <button className="btn" onClick={addEccCapk} disabled={!eccAddForm.rid || !eccAddForm.index || !eccAddForm.x || !eccAddForm.y}>Doğrula ve Ekle</button>
+          </div>
+          {eccAddResult && (
+            <p className={eccAddResult.ok ? 'capk-ok' : 'err-text'}>
+              {eccAddResult.ok ? `✓ Eklendi — ${eccAddResult.verify?.reason || ''}` : `✗ ${eccAddResult.error}`}
+              {eccAddResult.verify?.computedHash && <span className="mono small muted"> · SHA-256 {eccAddResult.verify.computedHash.slice(0, 24)}…</span>}
+            </p>
+          )}
+        </div>
+      </details>
+    </div>
   );
 }

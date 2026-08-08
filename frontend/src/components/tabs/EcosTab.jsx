@@ -62,6 +62,9 @@ function EcosOdaResultView({ r }) {
         {step(ch.issuer, 'Issuer cert (EC-SDSA)')}
         {step(ch.card, 'Card cert (EC-SDSA)')}
       </div>
+      {r.caKey && <p className="muted small" style={{ marginTop: 4 }}>
+        CA: {r.caKey.scheme} · RID {r.caKey.rid} · suite {r.caKey.suite} · {r.caKey.curve} · {r.caKey.keyType}</p>}
+      {ch.caError && <p className="err-text small" style={{ marginTop: 4 }}>✗ {ch.caError}</p>}
       <table className="kv-table"><tbody>
         {bdh.z && <tr><td>BDH z (ECDH.x)</td><td className="mono small muted" style={{ wordBreak: 'break-all' }}>{bdh.z}</td></tr>}
         {bdh.kdk && <tr><td>Kdk</td><td className="mono small muted">{bdh.kdk}</td></tr>}

@@ -150,6 +150,9 @@ function App() {
   const [addForm, setAddForm] = useState({ scheme: '', rid: '', index: '', exponent: '03', modulus: '', hash: '' });
   const [addResult, setAddResult] = useState(null);
   const [capkEdit, setCapkEdit] = useState(null); // { origRid, origIndex } while editing, else null
+  const [eccCapks, setEccCapks] = useState([]);
+  const [eccAddForm, setEccAddForm] = useState({ scheme: 'Mastercard', rid: 'A000000004', index: '', suite: '10', x: '', y: '', hash: '', keyType: 'Test' });
+  const [eccAddResult, setEccAddResult] = useState(null);
   const [sessionKeys, setSessionKeys] = useState([]);
   const [keyForm, setKeyForm] = useState({ label: '', pan: '', psn: '00', keyLevel: 'master', cvn: 'mastercard', keyType: '3des', acKey: '', macKey: '', encKey: '' });
   const [keyAddResult, setKeyAddResult] = useState(null);
@@ -396,7 +399,7 @@ function App() {
       setCapkSchemes(d.schemes || {});
     } catch { /* ignore */ }
   };
-  useEffect(() => { loadCapks(); }, []);
+  useEffect(() => { loadCapks(); loadEccCapks(); }, []);
 
   const loadSessionKeys = async () => {
     try { const r = await fetch(`${API}/keys`); const d = await r.json(); setSessionKeys(d.keys || []); } catch { /* */ }
@@ -1015,6 +1018,33 @@ ${apps}
 
   const emptyCapkForm = { scheme: '', rid: '', index: '', exponent: '03', modulus: '', hash: '' };
 
+  // ── ECC CA anahtarları (Kernel 8 · C-8 Tablo 4.3) — RSA CAPK'den ayrı depo ──
+  const emptyEccForm = { scheme: 'Mastercard', rid: 'A000000004', index: '', suite: '10', x: '', y: '', hash: '', keyType: 'Test' };
+  const loadEccCapks = async () => {
+    try {
+      const d = await (await fetch(`${API}/capk-ecc`)).json();
+      setEccCapks(d.keys || []);
+    } catch { /* backend kapalıysa liste boş kalır */ }
+  };
+  const addEccCapk = async () => {
+    setEccAddResult(null);
+    try {
+      const d = await apiPost('/capk-ecc/add', eccAddForm);
+      setEccAddResult(d);
+      if (d.ok) {
+        addTrace({ kind: 'ok', msg: `ECC CA anahtarı eklendi: ${eccAddForm.rid} idx ${eccAddForm.index}` });
+        setEccAddForm(emptyEccForm); loadEccCapks();
+      }
+    } catch (e) { setEccAddResult({ ok: false, error: e.message }); }
+  };
+  const deleteEccCapk = async (k) => {
+    try {
+      const d = await apiPost('/capk-ecc/delete', { rid: k.rid, index: k.index });
+      if (d.ok) { addTrace({ kind: 'ok', msg: `ECC CA anahtarı silindi: ${k.rid} idx ${k.index}` }); loadEccCapks(); }
+      else setEccAddResult(d);
+    } catch (e) { setEccAddResult({ ok: false, error: e.message }); }
+  };
+
   const addCapk = async () => {
     setAddResult(null);
     try {
@@ -1363,7 +1393,9 @@ ${apps}
         <CapkTab capks={capks} capkSchemes={capkSchemes} capkFilter={capkFilter} setCapkFilter={setCapkFilter}
           addForm={addForm} setAddForm={setAddForm} addCapk={addCapk} addResult={addResult}
           capkEdit={capkEdit} startEditCapk={startEditCapk} cancelEditCapk={cancelEditCapk}
-          updateCapk={updateCapk} deleteCapk={deleteCapk} />
+          updateCapk={updateCapk} deleteCapk={deleteCapk}
+          eccCapks={eccCapks} eccAddForm={eccAddForm} setEccAddForm={setEccAddForm}
+          addEccCapk={addEccCapk} deleteEccCapk={deleteEccCapk} eccAddResult={eccAddResult} />
       )}
 
       {activeTab === 'keys' && (
